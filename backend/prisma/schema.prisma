@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum OrderStatus {
+  NEW
+  IN_PROGRESS
+  READY
+  DELIVERED
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum ItemType {
+  FRAME
+  LENS
+  ACCESSORY
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(EMPLOYEE)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Customer {
+  id           String        @id @default(cuid())
+  name         String
+  phone        String        @unique
+  email        String?
+  dateOfBirth  DateTime?
+  address      String?
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  examinations Examination[]
+  orders       Order[]
+  invoices     Invoice[]
+}
+
+model Examination {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  doctor     String?
+  date       DateTime @default(now())
+  rightSph   Float?
+  rightCyl   Float?
+  rightAxis  Int?
+  leftSph    Float?
+  leftCyl    Float?
+  leftAxis   Int?
+  add        Float?
+  ipd        Float?
+  height     Float?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  orders     Order[]
+}
+
+model InventoryItem {
+  id         String      @id @default(cuid())
+  type       ItemType
+  brand      String?
+  model      String?
+  color      String?
+  material   String?
+  lensType   String?
+  coating    String?
+  lensIndex  Float?
+  category   String?
+  price      Float       @default(0)
+  quantity   Int         @default(0)
+  sku        String?     @unique
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  orderItems OrderItem[]
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  customerId    String
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  examinationId String?
+  examination   Examination? @relation(fields: [examinationId], references: [id])
+  status        OrderStatus @default(NEW)
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  items         OrderItem[]
+  invoice       Invoice?
+}
+
+model OrderItem {
+  id              String         @id @default(cuid())
+  orderId         String
+  order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  customItemName  String?
+  quantity        Int            @default(1)
+  price           Float
+  notes           String?
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id])
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  totalAmount   Float
+  paidAmount    Float         @default(0)
+  paymentMethod String?
+  status        InvoiceStatus @default(UNPAID)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  payments      Payment[]
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount    Float
+  method    String
+  date      DateTime @default(now())
+  notes     String?
+}

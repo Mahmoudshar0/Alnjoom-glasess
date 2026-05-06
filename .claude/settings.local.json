@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 \"C:\\\\Users\\\\bo7aa\\\\.claude\\\\skills\\\\ui-ux-pro-max\\\\scripts\\\\search.py\" \"optical shop medical SaaS dashboard premium clean modern\" --design-system -p \"OptiVision\" -f markdown)",
+      "Bash(python \"C:\\\\Users\\\\bo7aa\\\\.claude\\\\skills\\\\ui-ux-pro-max\\\\scripts\\\\search.py\" \"optical shop medical SaaS dashboard premium clean modern\" --design-system -p \"OptiVision\" -f markdown)",
+      "Bash(python \"C:\\\\Users\\\\bo7aa\\\\.claude\\\\skills\\\\ui-ux-pro-max\\\\scripts\\\\search.py\" \"dashboard sidebar navigation management system\" --stack react)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "PowerShell(Get-ChildItem -Path \"X:\\\\Work\\\\MMB\\\\Eye-shop\\\\backend\" -Force | Select-Object Name, @{Name=\"Type\"; Expression={if\\($_.PSIsContainer\\) {\"DIR\"} else {\"FILE\"}}} | Format-Table -AutoSize)",
+      "PowerShell(Get-ChildItem -Path \"X:\\\\Work\\\\MMB\\\\Eye-shop\\\\frontend\" -Force | Select-Object Name, @{Name=\"Type\"; Expression={if\\($_.PSIsContainer\\) {\"DIR\"} else {\"FILE\"}}} | Format-Table -AutoSize)",
+      "PowerShell(Get-ChildItem -Path \"X:\\\\Work\\\\MMB\\\\Eye-shop\\\\backend\\\\prisma\" -Force | Select-Object Name, @{Name=\"Type\"; Expression={if\\($_.PSIsContainer\\) {\"DIR\"} else {\"FILE\"}}} | Format-Table -AutoSize)",
+      "PowerShell(Get-ChildItem -Path \"X:\\\\Work\\\\MMB\\\\Eye-shop\\\\backend\\\\scripts\" -Force | Select-Object Name, @{Name=\"Type\"; Expression={if\\($_.PSIsContainer\\) {\"DIR\"} else {\"FILE\"}}} | Format-Table -AutoSize)"
+    ]
+  }
+}
