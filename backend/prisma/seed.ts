@@ -26,7 +26,7 @@ async function main() {
     update: {},
     create: {
       name: 'Staff Member',
-      email: 'staffxxxxx@optivision.com',
+      email: 'staff@optivision.com',
       passwordHash: employeePassword,
       role: 'EMPLOYEE',
     },

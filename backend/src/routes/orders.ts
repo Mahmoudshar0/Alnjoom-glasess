@@ -34,7 +34,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     include: {
       customer: { select: { id: true, name: true, phone: true } },
       items: { include: { inventoryItem: true } },
-      invoice: true,
+      invoice: { select: { id: true, status: true, totalAmount: true, paidAmount: true } },
       examination: true,
     },
   });
@@ -47,7 +47,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
     include: {
       customer: true,
       items: { include: { inventoryItem: true } },
-      invoice: { include: { payments: true } },
+      invoice: { select: { id: true, status: true, totalAmount: true, paidAmount: true } },
       examination: true,
     },
   });

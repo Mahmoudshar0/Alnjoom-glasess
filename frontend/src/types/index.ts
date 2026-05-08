@@ -76,10 +76,11 @@ export interface Order {
   customer?: Pick<Customer, 'id' | 'name' | 'phone'>;
   examinationId?: string;
   examination?: Examination;
+  invoiceId?: string | null;
+  invoice?: Pick<Invoice, 'id' | 'status' | 'totalAmount' | 'paidAmount'> | null;
   status: OrderStatus;
   notes?: string;
   items: OrderItem[];
-  invoice?: Invoice;
   createdAt: string;
   updatedAt: string;
 }
@@ -95,10 +96,9 @@ export interface Payment {
 
 export interface Invoice {
   id: string;
-  orderId: string;
   customerId: string;
   customer?: Pick<Customer, 'id' | 'name' | 'phone'>;
-  order?: Order;
+  orders: Order[];
   totalAmount: number;
   paidAmount: number;
   paymentMethod?: string;

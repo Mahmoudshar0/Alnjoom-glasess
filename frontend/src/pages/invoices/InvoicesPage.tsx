@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { Plus, DollarSign, Printer, ChevronDown, ChevronUp } from 'lucide-react';
-import { getInvoices, createInvoice, addPayment } from '../../api/invoices';
+import { Plus, DollarSign, Printer, ChevronDown, ChevronUp, Trash2, ShoppingBag } from 'lucide-react';
+import { getInvoices, createInvoice, addPayment, deleteInvoice, CreateInvoicePayload } from '../../api/invoices';
 import { getOrders } from '../../api/orders';
-import { Invoice, InvoiceStatus } from '../../types';
+import { getCustomers } from '../../api/customers';
+import { Invoice, InvoiceStatus, Order } from '../../types';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import { Input, Select, Textarea } from '../../components/ui/Input';
-import { InvoiceStatusBadge } from '../../components/ui/Badge';
+import { InvoiceStatusBadge, OrderStatusBadge } from '../../components/ui/Badge';
 import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { formatKWD, formatDate } from '../../utils/format';
 
@@ -20,6 +21,10 @@ const tabs: { key: InvoiceStatus | 'ALL'; label: string }[] = [
   { key: 'PAID', label: 'Paid' },
 ];
 
+function orderTotal(order: Order): number {
+  return order.items.reduce((s, i) => s + i.price * i.quantity, 0);
+}
+
 export default function InvoicesPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -28,24 +33,41 @@ export default function InvoicesPage() {
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  // Create form state
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [createError, setCreateError] = useState('');
+
   const { data: invoices, isLoading } = useQuery({
     queryKey: ['invoices', activeTab],
     queryFn: () => getInvoices(activeTab !== 'ALL' ? { status: activeTab } : undefined),
   });
-  const { data: orders } = useQuery({
-    queryKey: ['orders', 'no-invoice'],
-    queryFn: () => getOrders(),
-    select: (data) => data.filter(o => !o.invoice),
+
+  const { data: customers } = useQuery({ queryKey: ['customers'], queryFn: () => getCustomers() });
+
+  // Load all orders for the selected customer (uninvoiced only)
+  const { data: customerOrders } = useQuery({
+    queryKey: ['orders', 'customer', selectedCustomerId],
+    queryFn: () => getOrders({ customerId: selectedCustomerId }),
+    enabled: !!selectedCustomerId,
+    select: (data) => data.filter(o => !o.invoiceId),
   });
 
-  const { register: regCreate, handleSubmit: handleCreate, reset: resetCreate, watch: watchCreate, setValue: setCreateValue, formState: { isSubmitting: isCreating } } = useForm<any>();
   const { register: regPay, handleSubmit: handlePay, reset: resetPay, formState: { isSubmitting: isPaying } } = useForm<any>();
-
-  const watchOrderId = watchCreate('orderId');
+  const { register: regCreate, handleSubmit: handleCreate, reset: resetCreate, formState: { isSubmitting: isCreating } } = useForm<any>({
+    defaultValues: { paidAmount: '0' },
+  });
 
   const createMut = useMutation({
     mutationFn: createInvoice,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['invoices'] }); qc.invalidateQueries({ queryKey: ['orders'] }); setIsCreateOpen(false); resetCreate({}); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      closeCreate();
+    },
+    onError: (err: any) => {
+      setCreateError(err.response?.data?.message ?? 'Failed to create invoice. Please try again.');
+    },
   });
 
   const paymentMut = useMutation({
@@ -53,23 +75,49 @@ export default function InvoicesPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['invoices'] }); setPaymentInvoice(null); resetPay({}); },
   });
 
-  const handleOrderSelect = (orderId: string) => {
-    const order = orders?.find(o => o.id === orderId);
-    if (order) {
-      const total = order.items.reduce((s: number, i: any) => s + i.price * i.quantity, 0);
-      setCreateValue('totalAmount', total.toFixed(3));
-    }
+  const deleteMut = useMutation({
+    mutationFn: deleteInvoice,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+
+  const closeCreate = () => {
+    setIsCreateOpen(false);
+    setSelectedCustomerId('');
+    setSelectedOrderIds(new Set());
+    setCreateError('');
+    resetCreate({ paidAmount: '0' });
   };
 
+  const toggleOrder = (orderId: string) => {
+    setSelectedOrderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  };
+
+  const selectedTotal = useMemo(() => {
+    if (!customerOrders) return 0;
+    return customerOrders
+      .filter(o => selectedOrderIds.has(o.id))
+      .reduce((sum, o) => sum + orderTotal(o), 0);
+  }, [customerOrders, selectedOrderIds]);
+
   const onCreateSubmit = (data: any) => {
-    const order = orders?.find(o => o.id === data.orderId);
+    if (!selectedCustomerId) { setCreateError('Please select a customer.'); return; }
+    if (selectedOrderIds.size === 0) { setCreateError('Please select at least one order.'); return; }
+    setCreateError('');
+    const paidAmount = parseFloat(data.paidAmount) || 0;
     createMut.mutate({
-      orderId: data.orderId,
-      customerId: order?.customerId || data.customerId,
-      totalAmount: parseFloat(data.totalAmount),
-      paidAmount: parseFloat(data.paidAmount) || 0,
-      paymentMethod: data.paymentMethod,
-      notes: data.notes,
+      customerId: selectedCustomerId,
+      orderIds: Array.from(selectedOrderIds),
+      paidAmount,
+      paymentMethod: data.paymentMethod || undefined,
+      notes: data.notes || undefined,
     });
   };
 
@@ -129,6 +177,7 @@ export default function InvoicesPage() {
                   <div className="flex items-center gap-3 flex-wrap">
                     <p className="text-sm font-semibold text-slate-900">{inv.customer?.name}</p>
                     <InvoiceStatusBadge status={inv.status} />
+                    <span className="text-xs text-slate-400">{inv.orders?.length ?? 0} order{(inv.orders?.length ?? 0) !== 1 ? 's' : ''}</span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">{formatDate(inv.createdAt)} · {inv.paymentMethod || 'No payment method'}</p>
                 </div>
@@ -143,12 +192,45 @@ export default function InvoicesPage() {
 
               {expanded === inv.id && (
                 <div className="border-t border-slate-100 px-5 py-4 space-y-4">
+                  {/* Included orders */}
+                  {inv.orders && inv.orders.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Orders Included</p>
+                      <div className="space-y-2">
+                        {inv.orders.map(order => (
+                          <div key={order.id} className="bg-slate-50 rounded-lg p-3">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <ShoppingBag size={13} className="text-slate-400" />
+                                <span className="text-xs font-medium text-slate-700">{formatDate(order.createdAt)}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <OrderStatusBadge status={order.status} />
+                                <span className="text-xs font-bold text-slate-900">{formatKWD(orderTotal(order))}</span>
+                              </div>
+                            </div>
+                            <div className="space-y-0.5">
+                              {order.items.map(item => (
+                                <div key={item.id} className="flex justify-between text-xs text-slate-500">
+                                  <span>{item.inventoryItem ? `${item.inventoryItem.brand || ''} ${item.inventoryItem.model || ''}`.trim() : item.customItemName}</span>
+                                  <span>{formatKWD(item.price)} × {item.quantity}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Payment summary */}
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div><p className="text-xs text-slate-500">Total</p><p className="font-medium">{formatKWD(inv.totalAmount)}</p></div>
                     <div><p className="text-xs text-slate-500">Paid</p><p className="font-medium text-emerald-600">{formatKWD(inv.paidAmount)}</p></div>
                     <div><p className="text-xs text-slate-500">Remaining</p><p className="font-medium text-red-600">{formatKWD(inv.totalAmount - inv.paidAmount)}</p></div>
                   </div>
 
+                  {/* Payment history */}
                   {inv.payments && inv.payments.length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-slate-500 mb-2">Payment History</p>
@@ -168,8 +250,15 @@ export default function InvoicesPage() {
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" leftIcon={<Printer size={14} />} onClick={() => navigate(`/invoices/${inv.id}/print`)}>
-                      Print Invoice
+                      Print
                     </Button>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => { if (confirm('Delete this invoice? Orders will be unlinked and can be re-invoiced.')) deleteMut.mutate(inv.id); }}
+                      className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 cursor-pointer transition-colors px-2 py-1 rounded hover:bg-red-50"
+                    >
+                      <Trash2 size={13} /> Delete
+                    </button>
                   </div>
                 </div>
               )}
@@ -178,44 +267,150 @@ export default function InvoicesPage() {
         )}
       </div>
 
-      {/* Create Invoice Modal */}
-      <Modal isOpen={isCreateOpen} onClose={() => { setIsCreateOpen(false); resetCreate({}); }} title="New Invoice">
-        <form onSubmit={handleCreate(onCreateSubmit)} className="space-y-4">
-          <Select label="Order *" {...regCreate('orderId', { required: true })}
-            onChange={(e) => { regCreate('orderId').onChange(e); handleOrderSelect(e.target.value); }}>
-            <option value="">Select order...</option>
-            {orders?.map(o => <option key={o.id} value={o.id}>{o.customer?.name} — {formatDate(o.createdAt)}</option>)}
+      {/* ── Create Invoice Modal ── */}
+      <Modal isOpen={isCreateOpen} onClose={closeCreate} title="New Invoice" size="xl">
+        <form onSubmit={handleCreate(onCreateSubmit)} className="space-y-5">
+          {createError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{createError}</div>
+          )}
+
+          {/* Customer selection */}
+          <Select
+            label="Customer *"
+            value={selectedCustomerId}
+            onChange={e => { setSelectedCustomerId(e.target.value); setSelectedOrderIds(new Set()); setCreateError(''); }}
+          >
+            <option value="">Select customer...</option>
+            {customers?.map(c => <option key={c.id} value={c.id}>{c.name} — {c.phone}</option>)}
           </Select>
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Total Amount (KWD) *" type="number" step="0.001" placeholder="0.000" {...regCreate('totalAmount', { required: true })} />
-            <Input label="Initial Payment (KWD)" type="number" step="0.001" placeholder="0.000" {...regCreate('paidAmount')} />
-          </div>
-          <Select label="Payment Method" {...regCreate('paymentMethod')}>
-            <option value="">Select...</option>
-            <option value="Cash">Cash</option>
-            <option value="KNET">KNET</option>
-            <option value="Credit Card">Credit Card</option>
-            <option value="Bank Transfer">Bank Transfer</option>
-          </Select>
-          <Textarea label="Notes" {...regCreate('notes')} />
+
+          {/* Order selection */}
+          {selectedCustomerId && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-slate-700">Select Orders to Include *</p>
+                {customerOrders && customerOrders.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedOrderIds.size === customerOrders.length) setSelectedOrderIds(new Set());
+                      else setSelectedOrderIds(new Set(customerOrders.map(o => o.id)));
+                    }}
+                    className="text-xs text-sky-600 hover:text-sky-700 cursor-pointer"
+                  >
+                    {selectedOrderIds.size === customerOrders?.length ? 'Deselect all' : 'Select all'}
+                  </button>
+                )}
+              </div>
+
+              {!customerOrders || customerOrders.length === 0 ? (
+                <div className="py-6 text-center text-sm text-slate-500 bg-slate-50 rounded-lg border border-slate-200">
+                  No uninvoiced orders for this customer
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {customerOrders.map(order => {
+                    const total = orderTotal(order);
+                    const checked = selectedOrderIds.has(order.id);
+                    return (
+                      <label
+                        key={order.id}
+                        className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${checked ? 'border-sky-400 bg-sky-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleOrder(order.id)}
+                          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-medium text-slate-900">{formatDate(order.createdAt)}</span>
+                            <div className="flex items-center gap-2">
+                              <OrderStatusBadge status={order.status} />
+                              <span className="text-sm font-bold text-slate-900">{formatKWD(total)}</span>
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {order.items.length} item{order.items.length !== 1 ? 's' : ''} ·{' '}
+                            {order.items.map(i => i.inventoryItem ? `${i.inventoryItem.brand || ''} ${i.inventoryItem.model || ''}`.trim() : i.customItemName).filter(Boolean).join(', ')}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Running total */}
+              {selectedOrderIds.size > 0 && (
+                <div className="mt-3 flex items-center justify-between p-3 bg-slate-900 text-white rounded-lg">
+                  <span className="text-sm font-medium">{selectedOrderIds.size} order{selectedOrderIds.size !== 1 ? 's' : ''} selected</span>
+                  <span className="text-base font-bold">{formatKWD(selectedTotal)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Payment section */}
+          {selectedOrderIds.size > 0 && (
+            <div className="border-t border-slate-100 pt-4 space-y-4">
+              <p className="text-sm font-medium text-slate-700">Payment (optional — for partial or full payment now)</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Input
+                    label="Initial Payment (KWD)"
+                    type="number"
+                    step="0.001"
+                    placeholder="0.000"
+                    {...regCreate('paidAmount')}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Leave as 0 to pay later</p>
+                </div>
+                <Select label="Payment Method" {...regCreate('paymentMethod')}>
+                  <option value="">Select...</option>
+                  <option value="Cash">Cash</option>
+                  <option value="KNET">KNET</option>
+                  <option value="Credit Card">Credit Card</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                </Select>
+              </div>
+              <Textarea label="Notes" placeholder="Any notes..." {...regCreate('notes')} />
+            </div>
+          )}
+
           <div className="flex gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => { setIsCreateOpen(false); resetCreate({}); }} className="flex-1">Cancel</Button>
-            <Button type="submit" isLoading={isCreating} className="flex-1">Create Invoice</Button>
+            <Button type="button" variant="secondary" onClick={closeCreate} className="flex-1">Cancel</Button>
+            <Button
+              type="submit"
+              isLoading={isCreating || createMut.isPending}
+              disabled={selectedOrderIds.size === 0}
+              className="flex-1"
+            >
+              Create Invoice
+            </Button>
           </div>
         </form>
       </Modal>
 
-      {/* Add Payment Modal */}
+      {/* ── Add Payment Modal ── */}
       <Modal isOpen={!!paymentInvoice} onClose={() => { setPaymentInvoice(null); resetPay({}); }} title="Add Payment">
         {paymentInvoice && (
           <form onSubmit={handlePay(onPaySubmit)} className="space-y-4">
             <div className="bg-slate-50 rounded-lg p-4 text-sm space-y-1">
               <div className="flex justify-between"><span className="text-slate-500">Customer</span><span className="font-medium">{paymentInvoice.customer?.name}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Remaining</span><span className="font-medium text-red-600">{formatKWD(paymentInvoice.totalAmount - paymentInvoice.paidAmount)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Total</span><span className="font-medium">{formatKWD(paymentInvoice.totalAmount)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Already Paid</span><span className="font-medium text-emerald-600">{formatKWD(paymentInvoice.paidAmount)}</span></div>
+              <div className="flex justify-between border-t border-slate-200 pt-1 mt-1"><span className="text-slate-500 font-medium">Remaining</span><span className="font-bold text-red-600">{formatKWD(paymentInvoice.totalAmount - paymentInvoice.paidAmount)}</span></div>
             </div>
-            <Input label="Amount (KWD) *" type="number" step="0.001" placeholder="0.000"
+            <Input
+              label="Amount (KWD) *"
+              type="number"
+              step="0.001"
+              placeholder="0.000"
               defaultValue={(paymentInvoice.totalAmount - paymentInvoice.paidAmount).toFixed(3)}
-              {...regPay('amount', { required: true })} />
+              {...regPay('amount', { required: true })}
+            />
             <Select label="Method *" {...regPay('method', { required: true })}>
               <option value="">Select...</option>
               <option value="Cash">Cash</option>

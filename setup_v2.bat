@@ -334,6 +334,27 @@ if !errorlevel! neq 0 (
 echo   [OK]      Database seeded.
 echo.
 
+:: ── Auto-import inventory if export file exists ───────────────
+if exist "%~dp0data\inventory.sql" (
+    echo [4/3] Found inventory backup. Importing inventory data...
+    set _PSQL=psql
+    where psql >nul 2>&1
+    if !errorlevel! neq 0 (
+        for /d %%V in ("C:\Program Files\PostgreSQL\*") do (
+            if exist "%%V\bin\psql.exe" set _PSQL=%%V\bin\psql.exe
+        )
+    )
+    set PGPASSWORD=!PG_PASS!
+    "!_PSQL!" -U postgres -d optivision -f "%~dp0data\inventory.sql" >nul 2>&1
+    set PGPASSWORD=
+    if !errorlevel! equ 0 (
+        echo   [OK]      Inventory data imported successfully.
+    ) else (
+        echo   [WARN]    Inventory import had issues. You can re-import manually later.
+    )
+    echo.
+)
+
 :: ============================================================
 :: DONE
 :: ============================================================

@@ -103,12 +103,13 @@ model Order {
   customer      Customer    @relation(fields: [customerId], references: [id])
   examinationId String?
   examination   Examination? @relation(fields: [examinationId], references: [id])
+  invoiceId     String?
+  invoice       Invoice?    @relation(fields: [invoiceId], references: [id])
   status        OrderStatus @default(NEW)
   notes         String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   items         OrderItem[]
-  invoice       Invoice?
 }
 
 model OrderItem {
@@ -125,10 +126,9 @@ model OrderItem {
 
 model Invoice {
   id            String        @id @default(cuid())
-  orderId       String        @unique
-  order         Order         @relation(fields: [orderId], references: [id])
   customerId    String
   customer      Customer      @relation(fields: [customerId], references: [id])
+  orders        Order[]
   totalAmount   Float
   paidAmount    Float         @default(0)
   paymentMethod String?

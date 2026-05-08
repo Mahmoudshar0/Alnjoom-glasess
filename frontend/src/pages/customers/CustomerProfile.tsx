@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -43,6 +43,7 @@ function parseNum(s?: string) {
 
 export default function CustomerProfile() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [examOpen, setExamOpen] = useState(false);
   const [editingExam, setEditingExam] = useState<Examination | null>(null);
@@ -155,7 +156,7 @@ export default function CustomerProfile() {
           <ArrowLeft size={16} /> Back to Customers
         </Link>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" leftIcon={<Printer size={14} />} onClick={() => window.print()}>
+          <Button variant="secondary" size="sm" leftIcon={<Printer size={14} />} onClick={() => navigate(`/customers/${id}/report`)}>
             Print Report
           </Button>
           <Button size="sm" leftIcon={<Plus size={14} />} onClick={openExamCreate}>

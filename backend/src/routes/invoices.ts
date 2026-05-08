@@ -7,9 +7,8 @@ const router = Router();
 router.use(authenticate);
 
 const invoiceSchema = z.object({
-  orderId: z.string(),
   customerId: z.string(),
-  totalAmount: z.number().min(0),
+  orderIds: z.array(z.string()).min(1, 'At least one order is required'),
   paidAmount: z.number().min(0).default(0),
   paymentMethod: z.string().optional(),
   notes: z.string().optional(),
@@ -22,6 +21,17 @@ const paymentSchema = z.object({
   notes: z.string().optional(),
 });
 
+const invoiceInclude = {
+  customer: { select: { id: true, name: true, phone: true } },
+  orders: {
+    include: {
+      items: { include: { inventoryItem: true } },
+      examination: true,
+    },
+  },
+  payments: true,
+};
+
 router.get('/', async (req: AuthRequest, res: Response) => {
   const status = req.query.status as string | undefined;
   const customerId = req.query.customerId as string | undefined;
@@ -31,11 +41,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       ...(customerId ? { customerId } : {}),
     },
     orderBy: { createdAt: 'desc' },
-    include: {
-      customer: { select: { id: true, name: true, phone: true } },
-      order: { include: { items: true } },
-      payments: true,
-    },
+    include: invoiceInclude,
   });
   return res.json(invoices);
 });
@@ -43,11 +49,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 router.get('/:id', async (req: AuthRequest, res: Response) => {
   const invoice = await prisma.invoice.findUnique({
     where: { id: req.params.id },
-    include: {
-      customer: true,
-      order: { include: { items: { include: { inventoryItem: true } }, examination: true } },
-      payments: true,
-    },
+    include: invoiceInclude,
   });
   if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
   return res.json(invoice);
@@ -57,18 +59,60 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   const parse = invoiceSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ message: 'Invalid input', errors: parse.error.issues });
 
-  const status =
-    parse.data.paidAmount >= parse.data.totalAmount
-      ? 'PAID'
-      : parse.data.paidAmount > 0
-      ? 'PARTIAL'
-      : 'UNPAID';
+  const { customerId, orderIds, paidAmount, paymentMethod, notes } = parse.data;
 
-  const invoice = await prisma.invoice.create({
-    data: { ...parse.data, status },
-    include: { customer: { select: { id: true, name: true } }, payments: true },
+  // Verify all orders belong to this customer and are uninvoiced
+  const orders = await prisma.order.findMany({
+    where: { id: { in: orderIds }, customerId },
+    include: { items: true },
   });
-  return res.status(201).json(invoice);
+
+  if (orders.length !== orderIds.length) {
+    return res.status(400).json({ message: 'Some orders were not found or do not belong to this customer' });
+  }
+
+  const alreadyInvoiced = orders.filter(o => o.invoiceId);
+  if (alreadyInvoiced.length > 0) {
+    return res.status(400).json({ message: 'Some selected orders are already included in another invoice' });
+  }
+
+  const totalAmount = orders.reduce((sum, order) =>
+    sum + order.items.reduce((s, item) => s + item.price * item.quantity, 0), 0
+  );
+
+  const status = paidAmount >= totalAmount ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'UNPAID';
+
+  const invoice = await prisma.$transaction(async (tx) => {
+    const inv = await tx.invoice.create({
+      data: { customerId, totalAmount, paidAmount, paymentMethod, status, notes },
+    });
+
+    // Link all orders to this invoice
+    await tx.order.updateMany({
+      where: { id: { in: orderIds } },
+      data: { invoiceId: inv.id },
+    });
+
+    // Record initial payment in history if paid upfront
+    if (paidAmount > 0) {
+      await tx.payment.create({
+        data: {
+          invoiceId: inv.id,
+          amount: paidAmount,
+          method: paymentMethod ?? 'Cash',
+          notes: 'Initial payment',
+        },
+      });
+    }
+
+    return inv;
+  });
+
+  const full = await prisma.invoice.findUnique({
+    where: { id: invoice.id },
+    include: invoiceInclude,
+  });
+  return res.status(201).json(full);
 });
 
 router.post('/:id/payments', async (req: AuthRequest, res: Response) => {
@@ -99,21 +143,34 @@ router.post('/:id/payments', async (req: AuthRequest, res: Response) => {
 });
 
 router.put('/:id', async (req: AuthRequest, res: Response) => {
-  const parse = invoiceSchema.partial().safeParse(req.body);
+  const parse = z.object({
+    paymentMethod: z.string().optional(),
+    notes: z.string().optional(),
+  }).safeParse(req.body);
   if (!parse.success) return res.status(400).json({ message: 'Invalid input' });
-
-  const current = await prisma.invoice.findUnique({ where: { id: req.params.id } });
-  if (!current) return res.status(404).json({ message: 'Invoice not found' });
-
-  const totalAmount = parse.data.totalAmount ?? current.totalAmount;
-  const paidAmount = parse.data.paidAmount ?? current.paidAmount;
-  const status = paidAmount >= totalAmount ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'UNPAID';
 
   const invoice = await prisma.invoice.update({
     where: { id: req.params.id },
-    data: { ...parse.data, status },
+    data: parse.data,
+    include: invoiceInclude,
   });
   return res.json(invoice);
+});
+
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  const invoice = await prisma.invoice.findUnique({ where: { id: req.params.id } });
+  if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
+
+  await prisma.$transaction(async (tx) => {
+    // Unlink orders so they can be re-invoiced
+    await tx.order.updateMany({
+      where: { invoiceId: req.params.id },
+      data: { invoiceId: null },
+    });
+    await tx.invoice.delete({ where: { id: req.params.id } });
+  });
+
+  return res.json({ message: 'Deleted' });
 });
 
 export default router;
