@@ -81,7 +81,7 @@ const COPY: Record<
     balanceDue: 'Balance Due',
     paymentHistory: 'Payment History',
     notes: 'Notes',
-    footerShop: 'Al Najoom — +96550127250',
+    footerShop: 'Al Najoom — +965 50127250',
     printed: 'Printed:',
     noLineItems: 'No line items',
     notFound: 'Invoice not found.',
@@ -108,7 +108,7 @@ const COPY: Record<
     balanceDue: 'المستحق',
     paymentHistory: 'سجل المدفوعات',
     notes: 'ملاحظات',
-    footerShop: 'النجوم — +96550127250',
+    footerShop: 'النجوم — ',
     printed: 'تاريخ الطباعة:',
     noLineItems: 'لا توجد بنود',
     notFound: 'الفاتورة غير موجودة.',
@@ -181,7 +181,7 @@ export default function InvoicePrint() {
         <div className={`flex items-start justify-between mb-8 pb-6 border-b-2 border-slate-900 ${isRtl ? 'flex-row-reverse' : ''}`}>
           <div className={isRtl ? 'text-right' : ''}>
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Al Najoom</h1>
-            <p className="text-sm text-slate-500 mt-1">+96550127250</p>
+            <p className="text-sm text-slate-500 mt-1">{isRtl ?'50127250 +965':'+965 50127250'}</p>
           </div>
           <div className={headerAlign}>
             <p className="text-2xl font-bold text-slate-900">{t.invoiceTitle}</p>
