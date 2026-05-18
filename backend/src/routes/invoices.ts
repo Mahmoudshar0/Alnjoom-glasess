@@ -35,10 +35,18 @@ const invoiceInclude = {
 router.get('/', async (req: AuthRequest, res: Response) => {
   const status = req.query.status as string | undefined;
   const customerId = req.query.customerId as string | undefined;
+  const dateFrom = req.query.dateFrom as string | undefined;
+  const dateTo = req.query.dateTo as string | undefined;
   const invoices = await prisma.invoice.findMany({
     where: {
       ...(status ? { status: status as any } : {}),
       ...(customerId ? { customerId } : {}),
+      ...(dateFrom || dateTo ? {
+        createdAt: {
+          ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+          ...(dateTo ? { lte: new Date(dateTo) } : {}),
+        },
+      } : {}),
     },
     orderBy: { createdAt: 'desc' },
     include: invoiceInclude,
