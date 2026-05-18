@@ -14,6 +14,12 @@ const invoiceStatusConfig: Record<InvoiceStatus, { label: string; className: str
   PAID: { label: 'Paid', className: 'bg-emerald-100 text-emerald-700' },
 };
 
+const invoiceStatusLabelAr: Record<InvoiceStatus, string> = {
+  UNPAID: 'غير مدفوع',
+  PARTIAL: 'مدفوع جزئياً',
+  PAID: 'مدفوع',
+};
+
 const itemTypeConfig: Record<ItemType, { label: string; className: string }> = {
   FRAME: { label: 'Frame', className: 'bg-violet-100 text-violet-700' },
   LENS: { label: 'Lens', className: 'bg-sky-100 text-sky-700' },
@@ -25,9 +31,10 @@ export function OrderStatusBadge({ status }: { status: OrderStatus }) {
   return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.className}`}>{cfg.label}</span>;
 }
 
-export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
+export function InvoiceStatusBadge({ status, locale = 'en' }: { status: InvoiceStatus; locale?: 'en' | 'ar' }) {
   const cfg = invoiceStatusConfig[status];
-  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.className}`}>{cfg.label}</span>;
+  const label = locale === 'ar' ? invoiceStatusLabelAr[status] : cfg.label;
+  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.className}`}>{label}</span>;
 }
 
 export function ItemTypeBadge({ type }: { type: ItemType }) {

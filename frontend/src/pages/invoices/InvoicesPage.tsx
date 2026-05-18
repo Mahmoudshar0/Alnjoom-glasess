@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { Plus, DollarSign, Printer, ChevronDown, ChevronUp, Trash2, ShoppingBag } from 'lucide-react';
+import PeriodCollectiveReport from './PeriodCollectiveReport';
 import { getInvoices, createInvoice, addPayment, deleteInvoice, CreateInvoicePayload } from '../../api/invoices';
 import { getOrders } from '../../api/orders';
 import { getCustomers } from '../../api/customers';
@@ -21,6 +22,14 @@ const tabs: { key: InvoiceStatus | 'ALL'; label: string }[] = [
   { key: 'PAID', label: 'Paid' },
 ];
 
+function toApiDateRange(from: string, to: string) {
+  const start = new Date(from);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(to);
+  end.setHours(23, 59, 59, 999);
+  return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
+}
+
 function orderTotal(order: Order): number {
   return order.items.reduce((s, i) => s + i.price * i.quantity, 0);
 }
@@ -29,6 +38,9 @@ export default function InvoicesPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<InvoiceStatus | 'ALL'>('ALL');
+  const [dateFromInput, setDateFromInput] = useState('');
+  const [dateToInput, setDateToInput] = useState('');
+  const [appliedPeriod, setAppliedPeriod] = useState<{ from: string; to: string } | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -38,10 +50,31 @@ export default function InvoicesPage() {
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [createError, setCreateError] = useState('');
 
+  const periodActive = !!appliedPeriod;
+
   const { data: invoices, isLoading } = useQuery({
-    queryKey: ['invoices', activeTab],
-    queryFn: () => getInvoices(activeTab !== 'ALL' ? { status: activeTab } : undefined),
+    queryKey: ['invoices', activeTab, appliedPeriod?.from, appliedPeriod?.to],
+    queryFn: () =>
+      getInvoices({
+        ...(activeTab !== 'ALL' ? { status: activeTab } : {}),
+        ...(appliedPeriod ? toApiDateRange(appliedPeriod.from, appliedPeriod.to) : {}),
+      }),
   });
+
+  const applyPeriod = () => {
+    if (!dateFromInput || !dateToInput) return;
+    if (dateFromInput > dateToInput) {
+      alert('The "From" date must be on or before the "To" date.');
+      return;
+    }
+    setAppliedPeriod({ from: dateFromInput, to: dateToInput });
+  };
+
+  const clearPeriod = () => {
+    setDateFromInput('');
+    setDateToInput('');
+    setAppliedPeriod(null);
+  };
 
   const { data: customers } = useQuery({ queryKey: ['customers'], queryFn: () => getCustomers() });
 
@@ -164,7 +197,49 @@ export default function InvoicesPage() {
         <Button leftIcon={<Plus size={16} />} onClick={() => setIsCreateOpen(true)}>New Invoice</Button>
       </div>
 
-      {/* Invoices list */}
+      {/* Period: من — إلى */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-4">
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">from</label>
+          <input
+            type="date"
+            value={dateFromInput}
+            onChange={e => setDateFromInput(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">to</label>
+          <input
+            type="date"
+            value={dateToInput}
+            onChange={e => setDateToInput(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+          />
+        </div>
+        <Button size="sm" onClick={applyPeriod} disabled={!dateFromInput || !dateToInput}>
+          Show Period
+        </Button>
+        {periodActive && (
+          <Button size="sm" variant="ghost" onClick={clearPeriod}>
+            Clear Period
+          </Button>
+        )}
+      </div>
+
+      {periodActive && appliedPeriod ? (
+        invoices?.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 py-12 text-center text-sm text-slate-500">
+            No invoices found for this period
+          </div>
+        ) : (
+          <PeriodCollectiveReport
+            invoices={invoices!}
+            dateFrom={appliedPeriod.from}
+            dateTo={appliedPeriod.to}
+          />
+        )
+      ) : (
       <div className="space-y-3">
         {invoices?.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 py-12 text-center text-sm text-slate-500">No invoices found</div>
@@ -266,6 +341,7 @@ export default function InvoicesPage() {
           ))
         )}
       </div>
+      )}
 
       {/* ── Create Invoice Modal ── */}
       <Modal isOpen={isCreateOpen} onClose={closeCreate} title="New Invoice" size="xl">

@@ -9,7 +9,7 @@ export interface CreateInvoicePayload {
   notes?: string;
 }
 
-export const getInvoices = (params?: { status?: InvoiceStatus; customerId?: string }) =>
+export const getInvoices = (params?: { status?: InvoiceStatus; customerId?: string; dateFrom?: string; dateTo?: string }) =>
   client.get<Invoice[]>('/invoices', { params }).then(r => r.data);
 
 export const getInvoice = (id: string) =>
