@@ -33,7 +33,7 @@ export default function PeriodCollectiveReport({
         <div className="flex items-center justify-end">
           <Button
             size="sm"
-            variant="secondary"
+            variant="primary"
             leftIcon={<FileSpreadsheet size={14} />}
             onClick={() => exportPeriodInvoicesToExcel(invoices, dateFrom, dateTo)}
             disabled={invoices.length === 0}
