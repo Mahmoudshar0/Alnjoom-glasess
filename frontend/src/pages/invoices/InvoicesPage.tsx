@@ -2,9 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { Plus, DollarSign, Printer, ChevronDown, ChevronUp, Trash2, ShoppingBag } from 'lucide-react';
+import { Plus, DollarSign, Printer, ChevronDown, ChevronUp, Trash2, ShoppingBag, Edit2 } from 'lucide-react';
 import PeriodCollectiveReport from './PeriodCollectiveReport';
-import { getInvoices, createInvoice, addPayment, deleteInvoice, CreateInvoicePayload } from '../../api/invoices';
+import { getInvoices, createInvoice, addPayment, deleteInvoice, updateInvoice, CreateInvoicePayload } from '../../api/invoices';
 import { getOrders } from '../../api/orders';
 import { getCustomers } from '../../api/customers';
 import { Invoice, InvoiceStatus, Order } from '../../types';
@@ -14,6 +14,7 @@ import { Input, Select, Textarea } from '../../components/ui/Input';
 import { InvoiceStatusBadge, OrderStatusBadge } from '../../components/ui/Badge';
 import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { formatKWD, formatDate } from '../../utils/format';
+import { useAuth } from '../../context/AuthContext';
 
 const tabs: { key: InvoiceStatus | 'ALL'; label: string }[] = [
   { key: 'ALL', label: 'All' },
@@ -37,12 +38,14 @@ function orderTotal(order: Order): number {
 export default function InvoicesPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<InvoiceStatus | 'ALL'>('ALL');
   const [dateFromInput, setDateFromInput] = useState('');
   const [dateToInput, setDateToInput] = useState('');
   const [appliedPeriod, setAppliedPeriod] = useState<{ from: string; to: string } | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   // Create form state
@@ -90,6 +93,7 @@ export default function InvoicesPage() {
   const { register: regCreate, handleSubmit: handleCreate, reset: resetCreate, formState: { isSubmitting: isCreating } } = useForm<any>({
     defaultValues: { paidAmount: '0' },
   });
+  const { register: regEdit, handleSubmit: handleEdit, reset: resetEdit } = useForm<any>();
 
   const createMut = useMutation({
     mutationFn: createInvoice,
@@ -115,6 +119,45 @@ export default function InvoicesPage() {
       qc.invalidateQueries({ queryKey: ['orders'] });
     },
   });
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: {
+      id: string;
+      data: { paymentMethod?: string; notes?: string; status?: InvoiceStatus; totalAmount?: number; paidAmount?: number };
+    }) => updateInvoice(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      setEditingInvoice(null);
+    },
+  });
+
+  const openEdit = (inv: Invoice) => {
+    setEditingInvoice(inv);
+    resetEdit({
+      paymentMethod: inv.paymentMethod ?? '',
+      notes:         inv.notes         ?? '',
+      status:        inv.status,
+      totalAmount:   inv.totalAmount.toFixed(3),
+      paidAmount:    inv.paidAmount.toFixed(3),
+    });
+  };
+
+  const onEditSubmit = (data: any) => {
+    if (!editingInvoice) return;
+    const totalAmount = parseFloat(data.totalAmount);
+    const paidAmount  = parseFloat(data.paidAmount);
+    if (isNaN(totalAmount) || isNaN(paidAmount) || totalAmount < 0 || paidAmount < 0) return;
+    updateMut.mutate({
+      id: editingInvoice.id,
+      data: {
+        paymentMethod: data.paymentMethod || undefined,
+        notes:         data.notes         || undefined,
+        status:        data.status        as InvoiceStatus,
+        totalAmount,
+        paidAmount,
+      },
+    });
+  };
 
   const closeCreate = () => {
     setIsCreateOpen(false);
@@ -327,6 +370,11 @@ export default function InvoicesPage() {
                     <Button size="sm" variant="ghost" leftIcon={<Printer size={14} />} onClick={() => navigate(`/invoices/${inv.id}/print`)}>
                       Print
                     </Button>
+                    {isAdmin && (
+                      <Button size="sm" variant="ghost" leftIcon={<Edit2 size={14} />} onClick={() => openEdit(inv)}>
+                        Edit
+                      </Button>
+                    )}
                     <div className="flex-1" />
                     <button
                       onClick={() => { if (confirm('Delete this invoice? Orders will be unlinked and can be re-invoiced.')) deleteMut.mutate(inv.id); }}
@@ -467,6 +515,65 @@ export default function InvoicesPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ── Edit Invoice Modal ── */}
+      <Modal isOpen={!!editingInvoice} onClose={() => setEditingInvoice(null)} title="Edit Invoice">
+        {editingInvoice && (
+          <form onSubmit={handleEdit(onEditSubmit)} className="space-y-4">
+            {/* Read-only context */}
+            <div className="bg-slate-50 rounded-lg p-3 text-sm flex justify-between items-center">
+              <span className="font-medium text-slate-900">{editingInvoice.customer?.name}</span>
+              <span className="text-slate-500">{formatDate(editingInvoice.createdAt)}</span>
+            </div>
+
+            {/* Financial amounts */}
+            <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 text-xs text-amber-800">
+              Editing amounts is a direct override. It does <strong>not</strong> add a payment history record — use "Add Payment" for that.
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Total Amount (KWD)"
+                type="number"
+                step="0.001"
+                min="0"
+                {...regEdit('totalAmount', { required: true, min: 0 })}
+              />
+              <Input
+                label="Paid Amount (KWD)"
+                type="number"
+                step="0.001"
+                min="0"
+                {...regEdit('paidAmount', { required: true, min: 0 })}
+              />
+            </div>
+
+            {/* Status override */}
+            <Select label="Status" {...regEdit('status')}>
+              <option value="UNPAID">Unpaid</option>
+              <option value="PARTIAL">Partial</option>
+              <option value="PAID">Paid</option>
+            </Select>
+            <p className="text-xs text-slate-400 -mt-3">
+              If you change the amounts above, status will be overridden by whatever is selected here.
+            </p>
+
+            {/* Payment method & notes */}
+            <Select label="Payment Method" {...regEdit('paymentMethod')}>
+              <option value="">None</option>
+              <option value="Cash">Cash</option>
+              <option value="KNET">KNET</option>
+              <option value="Credit Card">Credit Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+            </Select>
+            <Textarea label="Notes" placeholder="Any notes..." {...regEdit('notes')} />
+
+            <div className="flex gap-3 pt-2">
+              <Button type="button" variant="secondary" onClick={() => setEditingInvoice(null)} className="flex-1">Cancel</Button>
+              <Button type="submit" isLoading={updateMut.isPending} className="flex-1">Save Changes</Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* ── Add Payment Modal ── */}

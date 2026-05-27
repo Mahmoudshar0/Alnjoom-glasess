@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Trash2, Edit2, ArrowRight, XCircle } from 'lucide-react';
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '../../api/customers';
@@ -45,6 +45,7 @@ export default function CustomersList() {
   const { data: customers, isLoading } = useQuery({
     queryKey: ['customers', search],
     queryFn: () => getCustomers(search || undefined),
+    placeholderData: keepPreviousData,
   });
 
   const createMut = useMutation({

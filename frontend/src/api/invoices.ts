@@ -18,8 +18,10 @@ export const getInvoice = (id: string) =>
 export const createInvoice = (data: CreateInvoicePayload) =>
   client.post<Invoice>('/invoices', data).then(r => r.data);
 
-export const updateInvoice = (id: string, data: { paymentMethod?: string; notes?: string }) =>
-  client.put<Invoice>(`/invoices/${id}`, data).then(r => r.data);
+export const updateInvoice = (
+  id: string,
+  data: { paymentMethod?: string; notes?: string; status?: InvoiceStatus; totalAmount?: number; paidAmount?: number },
+) => client.put<Invoice>(`/invoices/${id}`, data).then(r => r.data);
 
 export const addPayment = (invoiceId: string, data: { amount: number; method: string; notes?: string }) =>
   client.post(`/invoices/${invoiceId}/payments`, data).then(r => r.data);

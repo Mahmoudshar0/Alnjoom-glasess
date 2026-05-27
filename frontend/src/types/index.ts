@@ -12,6 +12,13 @@ export interface User {
   createdAt?: string;
 }
 
+export interface FamilyMember {
+  id: string;
+  name?: string;
+  phone?: string;
+  dateOfBirth?: string;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -21,6 +28,9 @@ export interface Customer {
   address?: string;
   notes?: string;
   createdAt: string;
+  parentId?: string | null;
+  parent?: FamilyMember | null;
+  children?: FamilyMember[];
   _count?: { orders: number; examinations: number };
 }
 
@@ -112,6 +122,8 @@ export interface CustomerReport extends Customer {
   examinations: Examination[];
   orders: Order[];
   invoices: Invoice[];
+  parent?: FamilyMember | null;
+  children?: FamilyMember[];
   summary: {
     totalBilled: number;
     totalPaid: number;

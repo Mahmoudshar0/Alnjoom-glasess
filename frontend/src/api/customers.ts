@@ -18,3 +18,9 @@ export const deleteCustomer = (id: string) =>
 
 export const getCustomerReport = (id: string) =>
   client.get<CustomerReport>(`/reports/customer/${id}`).then(r => r.data);
+
+export const linkChild = (parentId: string, childId: string) =>
+  client.post(`/customers/${parentId}/children`, { childId }).then(r => r.data);
+
+export const unlinkChild = (parentId: string, childId: string) =>
+  client.delete(`/customers/${parentId}/children/${childId}`).then(r => r.data);
