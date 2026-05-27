@@ -28,7 +28,7 @@ app.use('/api/employees', employeeRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/backup', backupRoutes);
 
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', version: '1.0.0' }));
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', version: '1.0.5' }));
 
 // Global error handler — catches Prisma constraint errors and any unhandled throws
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -49,7 +49,6 @@ initAutoBackup();
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`OptiVision API running on port ${PORT}`);
-  console.log(`Access on LAN: http://<your-ip>:${PORT}`);
 });
 
 export default app;

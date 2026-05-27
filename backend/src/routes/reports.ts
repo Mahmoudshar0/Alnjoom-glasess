@@ -7,9 +7,13 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/customer/:customerId', async (req: AuthRequest, res: Response) => {
+  const familySelect = { id: true, name: true, phone: true, dateOfBirth: true };
+
   const customer = await prisma.customer.findUnique({
     where: { id: req.params.customerId },
     include: {
+      parent: { select: familySelect },
+      children: { select: familySelect, orderBy: { name: 'asc' } },
       examinations: { orderBy: { date: 'desc' } },
       orders: {
         orderBy: { createdAt: 'desc' },

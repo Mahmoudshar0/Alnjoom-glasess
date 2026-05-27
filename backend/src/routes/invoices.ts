@@ -154,12 +154,33 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
   const parse = z.object({
     paymentMethod: z.string().optional(),
     notes: z.string().optional(),
+    status: z.enum(['UNPAID', 'PARTIAL', 'PAID']).optional(),
+    totalAmount: z.number().min(0).optional(),
+    paidAmount: z.number().min(0).optional(),
   }).safeParse(req.body);
   if (!parse.success) return res.status(400).json({ message: 'Invalid input' });
 
+  const existing = await prisma.invoice.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ message: 'Invoice not found' });
+
+  const newTotal = parse.data.totalAmount ?? existing.totalAmount;
+  const newPaid  = parse.data.paidAmount  ?? existing.paidAmount;
+
+  // Use explicit status if provided; otherwise derive from the (possibly updated) amounts
+  const newStatus = parse.data.status ?? (
+    newPaid >= newTotal ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'UNPAID'
+  );
+
   const invoice = await prisma.invoice.update({
     where: { id: req.params.id },
-    data: parse.data,
+    data: {
+      // Only write paymentMethod/notes to DB if they were present in the request
+      ...(parse.data.paymentMethod !== undefined ? { paymentMethod: parse.data.paymentMethod || null } : {}),
+      ...(parse.data.notes        !== undefined ? { notes:         parse.data.notes        || null } : {}),
+      totalAmount: newTotal,
+      paidAmount:  newPaid,
+      status:      newStatus,
+    },
     include: invoiceInclude,
   });
   return res.json(invoice);
