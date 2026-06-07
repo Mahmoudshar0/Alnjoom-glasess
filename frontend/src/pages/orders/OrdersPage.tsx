@@ -127,7 +127,7 @@ export default function OrdersPage() {
                     <OrderStatusBadge status={order.status} />
                     {order.invoice && <InvoiceStatusBadge status={order.invoice.status} />}
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">{order.customer?.phone} · {formatDate(order.createdAt)} · {order.items.length} item{order.items.length !== 1 ? 's' : ''}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{order.customer?.phone} · {formatDate(order.createdAt)} · {order.items.length} item{order.items.length !== 1 ? 's' : ''}{order.createdBy ? ` · By: ${order.createdBy.name}` : ''}</p>
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="text-sm font-bold text-slate-900">{formatKWD(orderTotal(order))}</p>
@@ -155,6 +155,12 @@ export default function OrdersPage() {
                     ))}
                   </div>
                   {order.notes && <p className="text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2">Notes: {order.notes}</p>}
+
+                  {/* Created by */}
+                  <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                    <span className="font-medium text-slate-600">Created by:</span>
+                    <span>{order.createdBy?.name ?? 'Unknown'}</span>
+                  </div>
 
                   {/* Status update */}
                   <div className="flex items-center gap-3 pt-2 border-t border-slate-100">

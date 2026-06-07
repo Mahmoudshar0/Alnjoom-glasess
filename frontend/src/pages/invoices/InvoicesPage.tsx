@@ -297,7 +297,7 @@ export default function InvoicesPage() {
                     <InvoiceStatusBadge status={inv.status} />
                     <span className="text-xs text-slate-400">{inv.orders?.length ?? 0} order{(inv.orders?.length ?? 0) !== 1 ? 's' : ''}</span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">{formatDate(inv.createdAt)} · {inv.paymentMethod || 'No payment method'}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{formatDate(inv.createdAt)} · {inv.paymentMethod || 'No payment method'}{inv.createdBy ? ` · By: ${inv.createdBy.name}` : ''}</p>
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="text-sm font-bold text-slate-900">{formatKWD(inv.totalAmount)}</p>
@@ -346,6 +346,12 @@ export default function InvoicesPage() {
                     <div><p className="text-xs text-slate-500">Total</p><p className="font-medium">{formatKWD(inv.totalAmount)}</p></div>
                     <div><p className="text-xs text-slate-500">Paid</p><p className="font-medium text-emerald-600">{formatKWD(inv.paidAmount)}</p></div>
                     <div><p className="text-xs text-slate-500">Remaining</p><p className="font-medium text-red-600">{formatKWD(inv.totalAmount - inv.paidAmount)}</p></div>
+                  </div>
+
+                  {/* Created by */}
+                  <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                    <span className="font-medium text-slate-600">Created by:</span>
+                    <span>{inv.createdBy?.name ?? 'Unknown'}</span>
                   </div>
 
                   {/* Payment history */}

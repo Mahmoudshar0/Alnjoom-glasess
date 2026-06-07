@@ -91,6 +91,7 @@ export interface Order {
   status: OrderStatus;
   notes?: string;
   items: OrderItem[];
+  createdBy?: { id: string; name: string } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -115,6 +116,7 @@ export interface Invoice {
   status: InvoiceStatus;
   notes?: string;
   payments: Payment[];
+  createdBy?: { id: string; name: string } | null;
   createdAt: string;
 }
 

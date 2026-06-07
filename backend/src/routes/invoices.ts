@@ -30,6 +30,7 @@ const invoiceInclude = {
     },
   },
   payments: true,
+  createdBy: { select: { id: true, name: true } },
 };
 
 router.get('/', async (req: AuthRequest, res: Response) => {
@@ -92,7 +93,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
   const invoice = await prisma.$transaction(async (tx) => {
     const inv = await tx.invoice.create({
-      data: { customerId, totalAmount, paidAmount, paymentMethod, status, notes },
+      data: { customerId, totalAmount, paidAmount, paymentMethod, status, notes, createdById: req.user!.id },
     });
 
     // Link all orders to this invoice

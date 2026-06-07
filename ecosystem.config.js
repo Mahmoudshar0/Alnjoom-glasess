@@ -9,7 +9,7 @@ module.exports = {
       "env": {
         "NODE_ENV": "production",
         "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/optivision",
-        "JWT_SECRET": "optivision-secret-12667-15422",
+        "JWT_SECRET": "optivision-secret-3375-16525",
         "PORT": "3001"
       }
     },

@@ -42,6 +42,7 @@ const COPY: Record<
     invoiceDate: string;
     orders: string;
     paymentMethod: string;
+    createdBy: string;
     order: string;
     description: string;
     qty: string;
@@ -70,6 +71,7 @@ const COPY: Record<
     invoiceDate: 'Invoice Date',
     orders: 'Orders',
     paymentMethod: 'Payment Method',
+    createdBy: 'Prepared by',
     order: 'Order',
     description: 'Description',
     qty: 'Qty',
@@ -97,6 +99,7 @@ const COPY: Record<
     invoiceDate: 'تاريخ الفاتورة:',
     orders: 'الطلبات:',
     paymentMethod: 'طريقة الدفع:',
+    createdBy: 'حررها',
     order: 'طلب :',
     description: 'الوصف',
     qty: 'الكمية',
@@ -255,6 +258,18 @@ export default function InvoicePrint() {
                     className={`font-medium text-slate-900 w-32 ${detailsAlign}`}
                   >
                     {paymentMethodLabel(invoice.paymentMethod, lang)}
+                  </span>
+                </div>
+              )}
+              {invoice.createdBy && (
+                <div
+                  className={`flex gap-6  ${isRtl ? "justify-start" : "justify-end"}`}
+                >
+                  <span className="text-slate-500">{t.createdBy}</span>
+                  <span
+                    className={`font-medium text-slate-900 w-32 ${detailsAlign}`}
+                  >
+                    {invoice.createdBy.name}
                   </span>
                 </div>
               )}

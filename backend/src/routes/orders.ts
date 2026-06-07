@@ -36,6 +36,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       items: { include: { inventoryItem: true } },
       invoice: { select: { id: true, status: true, totalAmount: true, paidAmount: true } },
       examination: true,
+      createdBy: { select: { id: true, name: true } },
     },
   });
   return res.json(orders);
@@ -49,6 +50,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
       items: { include: { inventoryItem: true } },
       invoice: { select: { id: true, status: true, totalAmount: true, paidAmount: true } },
       examination: true,
+      createdBy: { select: { id: true, name: true } },
     },
   });
   if (!order) return res.status(404).json({ message: 'Order not found' });
@@ -65,11 +67,13 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     const created = await tx.order.create({
       data: {
         ...orderData,
+        createdById: req.user!.id,
         items: { create: items },
       },
       include: {
         customer: { select: { id: true, name: true, phone: true } },
         items: { include: { inventoryItem: true } },
+        createdBy: { select: { id: true, name: true } },
       },
     });
 

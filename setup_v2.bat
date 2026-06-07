@@ -18,7 +18,7 @@ echo   Done.
 echo.
 
 echo ============================================================
-echo   OptiVision - Automated Setup ^& Environment Solver
+echo   OptiVision — Automated Setup ^& Environment Solver
 echo   Compatible with Windows 8 / 8.1 / 10 / 11
 echo ============================================================
 echo.
@@ -45,7 +45,7 @@ if !errorlevel! neq 0 (
 where node >nul 2>&1
 if !errorlevel! neq 0 (
     echo   [MISSING] Node.js is NOT installed.
-    
+
     where winget >nul 2>&1
     if !errorlevel! equ 0 (
         echo   [SOLVER]  Attempting to install Node.js automatically via winget...
@@ -123,17 +123,17 @@ where psql >nul 2>&1
 
 if !errorlevel! neq 0 (
     echo   [WARN]    PostgreSQL not found in PATH. Searching hard drive...
-    
+
     for /d %%D in ("C:\Program Files\PostgreSQL\*") do (
         if exist "%%D\bin\psql.exe" set PG_BIN_PATH=%%D\bin
     )
-    
+
     if defined PG_BIN_PATH (
         echo   [SOLVER]  Found PostgreSQL at: !PG_BIN_PATH!
         echo             Adding to system PATH automatically...
-        
+
         set "PATH=!PG_BIN_PATH!;!PATH!"
-        
+
         for /f "tokens=2*" %%A in ('reg query HKCU\Environment /v PATH 2^>nul') do set "USER_PATH=%%B"
         if not defined USER_PATH (
             setx PATH "!PG_BIN_PATH!" >nul
@@ -146,7 +146,7 @@ if !errorlevel! neq 0 (
         echo   [OK]      PATH resolved.
     ) else (
         echo   [MISSING] PostgreSQL is not installed.
-        
+
         where winget >nul 2>&1
         if !errorlevel! equ 0 (
             echo   [SOLVER]  Attempting silent background installation via winget...
@@ -207,9 +207,8 @@ if !errorlevel! neq 0 (
 )
 
 :: ----------------------------------------------------------------
-:: Internet connection — already checked above, block removed
+:: Halt if required tools are still missing
 :: ----------------------------------------------------------------
-
 if !ERRORS! neq 0 (
     echo.
     echo ============================================================
@@ -222,6 +221,7 @@ if !ERRORS! neq 0 (
 
 echo.
 echo ============================================================
+
 :: ============================================================
 :: SECTION 2 - DATABASE PASSWORD & ENV GENERATION
 :: ============================================================
@@ -232,7 +232,7 @@ echo.
 cd /d "%~dp0backend"
 
 set PG_PASS=postgres
-set /p USER_PASS="Enter your PostgreSQL password ^(press Enter to use default 'postgres'^): "
+set /p USER_PASS="Enter your PostgreSQL password (press Enter to use default 'postgres'): "
 if not "!USER_PASS!"=="" set PG_PASS=!USER_PASS!
 
 echo   [SOLVER]  Generating backend\.env file...
@@ -256,8 +256,9 @@ set PGPASSWORD=!PG_PASS!
 
 psql -U postgres -d postgres -c "SELECT 1;" >nul 2>&1
 if !errorlevel! neq 0 (
-    echo   [ERROR]   Cannot connect to PostgreSQL. 
+    echo   [ERROR]   Cannot connect to PostgreSQL.
     echo             Is the service running? Is the password '!PG_PASS!' correct?
+    set PGPASSWORD=
     pause
     exit /b 1
 )
@@ -270,6 +271,7 @@ if !errorlevel! neq 0 (
         echo   [OK]      Database 'optivision' created successfully.
     ) else (
         echo   [ERROR]   Failed to create database.
+        set PGPASSWORD=
         pause
         exit /b 1
     )
@@ -282,40 +284,45 @@ echo.
 echo ============================================================
 
 :: ============================================================
-:: SECTION 4 - INSTALL DEPENDENCIES & MIGRATE
+:: SECTION 4 - INSTALL DEPENDENCIES
 :: ============================================================
 
-echo [1/3] Installing dependencies ^(Backend ^& Frontend^)...
+echo [1/5] Installing backend dependencies...
 cd /d "%~dp0backend"
 call npm install
 if !errorlevel! neq 0 (
     echo   [ERROR]   Backend npm install failed. Check your internet connection.
     pause & exit /b 1
 )
+echo   [OK]      Backend packages installed.
+echo.
 
+echo [2/5] Installing frontend dependencies...
 cd /d "%~dp0frontend"
 call npm install
 if !errorlevel! neq 0 (
     echo   [ERROR]   Frontend npm install failed. Check your internet connection.
     pause & exit /b 1
 )
-echo   [OK]      All packages installed.
+echo   [OK]      Frontend packages installed.
 echo.
 
-echo [2/3] Running Database Migrations...
+:: ============================================================
+:: SECTION 5 - DATABASE SCHEMA SYNC
+:: ============================================================
+
+echo [3/5] Syncing database schema...
 cd /d "%~dp0backend"
-call npx prisma migrate deploy >nul 2>&1
+call npx prisma db push --accept-data-loss
 if !errorlevel! neq 0 (
-    call npx prisma migrate dev --name init
-)
-if !errorlevel! neq 0 (
-    echo   [ERROR]   Database migration failed.
+    echo   [ERROR]   Database schema sync failed.
+    echo             Make sure PostgreSQL is running and the password is correct.
     pause & exit /b 1
 )
-echo   [OK]      Database migrated.
+echo   [OK]      Database schema is up to date.
 echo.
 
-echo [2.5/3] Generating Prisma Client...
+echo [3.5/5] Generating Prisma client...
 cd /d "%~dp0backend"
 call npx prisma generate
 if !errorlevel! neq 0 (
@@ -325,18 +332,37 @@ if !errorlevel! neq 0 (
 echo   [OK]      Prisma client generated.
 echo.
 
-echo [3/3] Seeding Database ^(Admin Account^)...
+@REM echo [4/5] Seeding database (Admin account)...
+@REM cd /d "%~dp0backend"
+@REM call npx ts-node prisma/seed.ts
+@REM if !errorlevel! neq 0 (
+@REM     echo   [WARN]    Seeding skipped ^(admin account may already exist^). Continuing...
+@REM ) else (
+@REM     echo   [OK]      Database seeded.
+@REM )
+@REM echo.
+
+:: ============================================================
+:: SECTION 6 - BUILD BACKEND (TypeScript compile check)
+:: ============================================================
+
+echo [5/5] Building backend ^(TypeScript compile check^)...
 cd /d "%~dp0backend"
-call npx ts-node prisma/seed.ts
+call npx tsc
 if !errorlevel! neq 0 (
-    echo   [WARN]    Seeding failed or already seeded. Continuing...
+    echo   [ERROR]   TypeScript build failed.
+    echo             The backend has compile errors. Please check the output above.
+    pause & exit /b 1
 )
-echo   [OK]      Database seeded.
+echo   [OK]      Backend compiled successfully.
 echo.
 
-:: ── Auto-import inventory if export file exists ───────────────
+:: ============================================================
+:: AUTO-IMPORT INVENTORY (if backup file exists)
+:: ============================================================
+
 if exist "%~dp0data\inventory.sql" (
-    echo [4/3] Found inventory backup. Importing inventory data...
+    echo [BONUS] Found inventory backup. Importing inventory data...
     set _PSQL=psql
     where psql >nul 2>&1
     if !errorlevel! neq 0 (
@@ -360,15 +386,31 @@ if exist "%~dp0data\inventory.sql" (
 :: ============================================================
 
 echo ============================================================
-echo   SETUP COMPLETE! The system has been fully solved and built.
+echo.
+echo   SETUP COMPLETE!
+echo.
+@REM echo   Login credentials:
+@REM echo     Email:    admin@optivision.com
+@REM echo     Password: admin123
+echo.
+echo   Frontend : http://localhost:5173
+echo   Backend  : http://localhost:3001
+echo   LAN      : http://YOUR-IP:5173
+echo.
 echo ============================================================
 echo.
-echo   Default login credentials:
-echo     Email:    admin@optivision.com
-echo     Password: admin123
-echo.
-echo   To start the app, double-click start.bat
-echo ============================================================
-echo.
-pause
+
+:: Ask if user wants to launch now
+set /p LAUNCH="Launch OptiVision now? (Y/N): "
+if /i "!LAUNCH!"=="Y" (
+    echo.
+    echo   Starting OptiVision...
+    call "%~dp0start.bat"
+) else (
+    echo.
+    echo   To start the app, double-click start.bat
+    echo.
+    pause
+)
+
 endlocal
