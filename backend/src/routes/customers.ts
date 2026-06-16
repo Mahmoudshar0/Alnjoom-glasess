@@ -77,10 +77,10 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
   const { phone, parentId, ...rest } = parse.data;
 
-  if (phone) {
-    const existing = await prisma.customer.findFirst({ where: { phone } });
-    if (existing) return res.status(409).json({ message: 'Customer with this phone already exists' });
-  }
+  // if (phone) {
+  //   const existing = await prisma.customer.findFirst({ where: { phone } });
+  //   if (existing) return res.status(409).json({ message: 'Customer with this phone already exists' });
+  // }
 
   if (parentId) {
     const parent = await prisma.customer.findUnique({ where: { id: parentId } });
