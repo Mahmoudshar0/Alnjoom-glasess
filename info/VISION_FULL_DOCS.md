@@ -29,12 +29,13 @@ Optical shops need a unified system to:
 ## Main Capabilities
 1. **Customer Management** — CRUD, search, family linking (parent/child)
 2. **Examinations** — Full prescription entry (OD/OS SPH, CYL, AXIS, ADD, IPD, Height)
-3. **Orders** — Multi-item orders linked to customer + examination + inventory; status workflow (NEW → IN_PROGRESS → READY → DELIVERED)
-4. **Invoices** — Generated from uninvoiced orders, payment tracking, printable A4 format
+3. **Orders** — Multi-item orders linked to customer + examination + inventory; status workflow (NEW → IN_PROGRESS → READY → DELIVERED); searchable customer combobox
+4. **Invoices** — Generated from uninvoiced orders, detailed payment history per installment (date, method, notes, amount), printable A4 format; searchable customer combobox
 5. **Inventory** — Frames, Lenses, Accessories with type-specific fields, SKU auto-generation, stock alerts
-6. **Reports** — Dashboard summary, customer history, financial analytics (Admin)
+6. **Reports** — Dashboard summary, customer history, financial analytics (Admin), **Staff Performance analytics** (Admin)
 7. **Employee Management** — User CRUD, role assignment, activation (Admin only)
 8. **Backup & Restore** — pg_dump/psql-based, scheduled auto-backups, browser upload restore (Admin only)
+9. **Search** — Real-time client-side search bars on Orders and Invoices pages; searchable combobox dropdowns on all customer-selection modals
 
 ## High-Level Architecture
 ```
@@ -126,7 +127,7 @@ Eye-shop-mahmoudRepo/
 │   │       ├── orders.ts            # CRUD + status + inventory sync
 │   │       ├── invoices.ts          # CRUD + payments + order linking
 │   │       ├── employees.ts         # Admin-only user CRUD
-│   │       ├── reports.ts           # Summary, customer, financial (admin)
+│   │       ├── reports.ts           # Summary, customer, financial (admin), staff performance (admin)
 │   │       └── backup.ts            # Backup/restore + auto-scheduler
 │   ├── prisma/
 │   │   ├── schema.prisma            # Database schema (see §8)
@@ -156,7 +157,7 @@ Eye-shop-mahmoudRepo/
 │   │   │   ├── reports.ts
 │   │   │   └── backup.ts
 │   │   ├── components/
-│   │   │   ├── ui/                  # Button, Input, Select, Modal, Card, Badge, LoadingSpinner
+│   │   │   ├── ui/                  # Button, Input, Select, Modal, Card, Badge, LoadingSpinner, SearchableSelect
 │   │   │   └── layout/              # Sidebar, Header, AppLayout
 │   │   ├── context/
 │   │   │   └── AuthContext.tsx      # JWT storage, login/logout, role check
@@ -177,6 +178,7 @@ Eye-shop-mahmoudRepo/
 │   │   │   ├── reports/
 │   │   │   │   ├── ReportsPage.tsx
 │   │   │   │   ├── FinancialReports.tsx
+│   │   │   │   ├── StaffPerformance.tsx      # NEW — per-staff daily analytics
 │   │   │   │   └── CustomerReport.tsx
 │   │   │   ├── settings/SettingsPage.tsx
 │   │   │   └── backup/BackupPage.tsx
@@ -218,6 +220,7 @@ Eye-shop-mahmoudRepo/
 | **Inventory** | Stock items + SKU management | `inventory.ts` |
 | **Employees** | User management (admin) | `employees.ts` |
 | **Reports** | Aggregated analytics | `reports.ts` |
+| **Staff Performance** | Per-employee daily sales analytics (Admin) | `reports.ts`, `StaffPerformance.tsx` |
 | **Backup** | pg_dump/psql automation | `backup.ts` |
 
 ## Service Structure
@@ -569,16 +572,16 @@ All inventory updates use `.catch(() => {})` to handle deleted inventory items g
 ## Feature: Invoices & Payments
 
 ### Purpose
-Generate invoices from uninvoiced orders, track payments, print professional invoices.
+Generate invoices from uninvoiced orders, track payments with full per-installment detail (date, method, notes), print professional invoices.
 
 ### User Role
 All authenticated users (Admin can override amounts/status)
 
 ### Entry Point
-`/invoices` (InvoicesPage) — tabs by status, period filter, create modal, payment modal, print
+`/invoices` (InvoicesPage) — tabs by status, real-time search bar (name/phone), period filter, create modal (searchable customer combobox), payment modal with date picker, print
 
 ### Business Value
-Billing and collection management with audit trail.
+Billing and collection management with per-installment audit trail.
 
 ### Internal Flow
 ```
@@ -612,7 +615,7 @@ Invoices List (filter by status, date range, customer)
 | GET | `/api/invoices` | Filter status, customer, date range |
 | GET | `/api/invoices/:id` | Full detail with orders, payments |
 | POST | `/api/invoices` | Create from orderIds (transaction) |
-| POST | `/api/invoices/:id/payments` | Add payment, recalc status |
+| POST | `/api/invoices/:id/payments` | Add payment (amount, **date**, method, notes), recalc paidAmount + status |
 | PUT | `/api/invoices/:id` | Admin override amounts/status |
 | DELETE | `/api/invoices/:id` | Unlink orders + delete |
 
@@ -620,6 +623,7 @@ Invoices List (filter by status, date range, customer)
 - Invoice total = sum of order items (price × qty) at creation
 - Status derived: PAID if paid≥total, PARTIAL if paid>0, else UNPAID
 - Payment adds to paidAmount, recalculates status
+- Each Payment record stores its own `date` (defaults to now if not provided), `method`, `notes`, `amount`
 - Admin can override total/paid/status directly (audit risk)
 - Deleting invoice unlinks orders (they become available for re-invoicing)
 
@@ -627,8 +631,11 @@ Invoices List (filter by status, date range, customer)
 - JWT required for all
 - Admin only: PUT /api/invoices/:id (amount/status override)
 
-### Edge Cases
-- Partial payments tracked in Payment history
+### Edge Cases & UI Notes
+- Partial payments shown as a numbered table inside invoice expand panel: #, Date, Method (badge), Notes, Amount, Total Paid footer
+- CustomerProfile Invoice History also has expandable payment breakdown per invoice
+- Payment date can be set explicitly in Add Payment modal (defaults to today)
+- Search bar on Invoices page filters by customer name or phone (client-side, instant)
 - Invoice print uses customer data + order items + payment summary
 - Period collective report aggregates multiple invoices for Excel export
 
@@ -706,16 +713,16 @@ Algorithm: Find max existing sequence for prefix, increment, check gaps
 ## Feature: Reports
 
 ### Purpose
-Dashboard summary, customer history reports, financial analytics (admin).
+Dashboard summary, customer history reports, financial analytics (admin), staff performance analytics (admin).
 
 ### User Role
-All: Dashboard, Customer Report. Admin: Financial Reports.
+All: Dashboard, Customer Report. Admin: Financial Reports, Staff Performance.
 
 ### Entry Point
-`/reports` (ReportsPage), `/reports/financial` (FinancialReports), `/customers/:id/report` (CustomerReport)
+`/reports` (ReportsPage), `/reports/financial` (FinancialReports), `/reports/staff` (StaffPerformance), `/customers/:id/report` (CustomerReport)
 
 ### Business Value
-Operational visibility: customer activity, stock alerts, collection rates, revenue trends.
+Operational visibility: customer activity, stock alerts, collection rates, revenue trends, and per-employee performance accountability.
 
 ### Internal Flow
 ```
@@ -735,21 +742,91 @@ Financial Reports (Admin) (GET /api/reports/financial)
     ├─► Revenue, outstanding, billed totals
     ├─► Orders by status
     └─► Recent 30-day revenue
+
+Staff Performance (Admin) (GET /api/reports/staff?dateFrom=&dateTo=)
+    ├─► Orders grouped by createdById (with items for value calc)
+    ├─► Invoices grouped by createdById
+    ├─► Per-user: totalOrders, totalOrderValue, totalInvoices, totalBilled, totalCollected
+    ├─► Per-user daily breakdown array (date, orders, orderValue, invoices, billed, collected)
+    └─► Sorted by totalBilled descending
 ```
 
 ### Files Involved
 | Type | Files |
 |------|-------|
-| Frontend | `ReportsPage.tsx`, `FinancialReports.tsx`, `CustomerReport.tsx` |
+| Frontend | `ReportsPage.tsx`, `FinancialReports.tsx`, `StaffPerformance.tsx`, `CustomerReport.tsx` |
 | API Client | `frontend/src/api/reports.ts` |
 | Backend | `backend/src/routes/reports.ts` |
 
 ### Database Tables
-All tables aggregated via Prisma `count`, `groupBy`, `aggregate`
+All tables aggregated via Prisma `count`, `groupBy`, `aggregate`; Staff: `Order.createdById`, `Invoice.createdById`
 
 ### Security Rules
 - JWT required
 - Financial Reports: `requireRole('ADMIN')`
+- Staff Performance: `requireRole('ADMIN')`
+
+---
+
+## Feature: Staff Performance Report *(Added 2026-06-16)*
+
+### Purpose
+Per-employee sales analytics with daily breakdown — orders created, invoices issued, revenue billed and collected.
+
+### User Role
+Admin only
+
+### Entry Point
+`/reports/staff` (StaffPerformance)
+
+### Business Value
+Holds staff accountable for daily targets. Identifies top performers and slow days. Enables commission or review calculations based on real billing data.
+
+### Internal Flow
+```
+1. Admin selects date range (From / To) and clicks Apply
+2. GET /api/reports/staff?dateFrom=<ISO>&dateTo=<ISO>
+3. Backend fetches Orders + Invoices with createdBy in date range
+4. Aggregates per user: totals + daily breakdown
+5. Returns sorted array (highest billed first)
+6. Frontend renders ranked staff cards (🥇🥈🥉)
+7. Click any card → expands daily table with color-coded collection %
+```
+
+### Files Involved
+| Type | Files |
+|------|-------|
+| Frontend Page | `frontend/src/pages/reports/StaffPerformance.tsx` |
+| API Client | `frontend/src/api/reports.ts` (`getStaffReport`, `StaffMemberStat`, `StaffDayData`, `StaffReport`) |
+| Backend | `backend/src/routes/reports.ts` (`GET /staff`) |
+
+### Database Tables
+`Order` (createdById, createdAt, items), `Invoice` (createdById, createdAt, totalAmount, paidAmount), `User`
+
+### APIs Used
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/reports/staff` | Admin | Returns staff performance stats with optional dateFrom/dateTo query params |
+
+### Response Shape
+```json
+{
+  "staffStats": [
+    {
+      "user": { "id": "...", "name": "...", "role": "EMPLOYEE" },
+      "totalOrders": 12,
+      "totalOrderValue": 3400.000,
+      "totalInvoices": 9,
+      "totalBilled": 3200.000,
+      "totalCollected": 2900.000,
+      "daily": [
+        { "date": "2026-06-15", "orders": 3, "orderValue": 800.000, "invoices": 2, "billed": 750.000, "collected": 700.000 }
+      ]
+    }
+  ],
+  "totalUsers": 4
+}
+```
 
 ---
 
