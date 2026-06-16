@@ -9,7 +9,8 @@ import { getAllExaminations, createExamination, updateExamination, deleteExamina
 import { getCustomers } from '../../api/customers';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
-import { Input, Select, Textarea } from '../../components/ui/Input';
+import { Input, Textarea } from '../../components/ui/Input';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { formatDate, signedFloat, formatAxis } from '../../utils/format';
 
@@ -47,6 +48,7 @@ export default function ExaminationsPage() {
   const [isOpen, setIsOpen] = useState(false);
   const [editing, setEditing] = useState<ExaminationWithCustomer | null>(null);
   const [apiError, setApiError] = useState('');
+  const [customerSelectValue, setCustomerSelectValue] = useState('');
 
   const { data: exams, isLoading } = useQuery({
     queryKey: ['examinations', search],
@@ -66,6 +68,7 @@ export default function ExaminationsPage() {
     setIsOpen(false);
     setEditing(null);
     setApiError('');
+    setCustomerSelectValue('');
     reset({});
   };
 
@@ -93,6 +96,7 @@ export default function ExaminationsPage() {
   const openCreate = () => {
     setEditing(null);
     setApiError('');
+    setCustomerSelectValue('');
     reset({ date: new Date().toISOString().slice(0, 10) });
     setIsOpen(true);
   };
@@ -100,6 +104,7 @@ export default function ExaminationsPage() {
   const openEdit = (exam: ExaminationWithCustomer) => {
     setEditing(exam);
     setApiError('');
+    setCustomerSelectValue(exam.customerId);
     reset({
       customerId: exam.customerId,
       doctor: exam.doctor ?? '',
@@ -264,12 +269,16 @@ export default function ExaminationsPage() {
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <Select label="Customer *" {...register('customerId')} error={errors.customerId?.message}>
-              <option value="">Select customer...</option>
-              {customers?.map(c => (
-                <option key={c.id} value={c.id}>{c.name} — {c.phone}</option>
-              ))}
-            </Select>
+            <SearchableSelect
+              label="Customer *"
+              placeholder="Select customer..."
+              searchPlaceholder="Search by name or phone..."
+              options={(customers ?? []).map(c => ({ value: c.id, label: c.name, sublabel: c.phone }))}
+              value={customerSelectValue}
+              onChange={val => { setCustomerSelectValue(val); setValue('customerId', val, { shouldValidate: true }); }}
+              error={errors.customerId?.message}
+              required
+            />
             <Input label="Doctor" placeholder="Dr. Name (optional)" {...register('doctor')} />
           </div>
           <Input label="Examination Date" type="date" {...register('date')} />

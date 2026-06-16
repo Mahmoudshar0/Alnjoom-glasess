@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   Users, ShoppingBag, FlaskConical, Package, AlertTriangle,
-  TrendingUp, ArrowRight, CheckCircle
+  TrendingUp, ArrowRight, CheckCircle, UserCheck, BarChart2
 } from 'lucide-react';
 import { getReportsSummary } from '../../api/reports';
 import { PageLoader } from '../../components/ui/LoadingSpinner';
@@ -81,6 +81,37 @@ export default function ReportsPage() {
           <p className="text-3xl font-bold text-slate-900">{data.lowStockItems?.length ?? 0}</p>
           <p className="text-xs text-slate-400 mt-1">Items need restocking</p>
         </div>
+      </div>
+
+      {/* Quick links to advanced reports */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Link
+          to="/reports/financial"
+          className="flex items-center gap-4 bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:border-sky-300 hover:shadow-md transition-all group"
+        >
+          <div className="p-3 bg-sky-50 rounded-xl group-hover:bg-sky-100 transition-colors">
+            <BarChart2 size={22} className="text-sky-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-slate-900">Financial Reports</p>
+            <p className="text-xs text-slate-500 mt-0.5">Revenue, collection rate, invoice history</p>
+          </div>
+          <ArrowRight size={16} className="text-slate-400 group-hover:text-sky-600 group-hover:translate-x-1 transition-all" />
+        </Link>
+
+        <Link
+          to="/reports/staff"
+          className="flex items-center gap-4 bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:border-violet-300 hover:shadow-md transition-all group"
+        >
+          <div className="p-3 bg-violet-50 rounded-xl group-hover:bg-violet-100 transition-colors">
+            <UserCheck size={22} className="text-violet-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-slate-900">Staff Performance</p>
+            <p className="text-xs text-slate-500 mt-0.5">Daily sales, orders & collections per employee</p>
+          </div>
+          <ArrowRight size={16} className="text-slate-400 group-hover:text-violet-600 group-hover:translate-x-1 transition-all" />
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

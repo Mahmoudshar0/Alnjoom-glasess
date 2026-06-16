@@ -23,7 +23,7 @@ export const updateInvoice = (
   data: { paymentMethod?: string; notes?: string; status?: InvoiceStatus; totalAmount?: number; paidAmount?: number },
 ) => client.put<Invoice>(`/invoices/${id}`, data).then(r => r.data);
 
-export const addPayment = (invoiceId: string, data: { amount: number; method: string; notes?: string }) =>
+export const addPayment = (invoiceId: string, data: { amount: number; method: string; date?: string; notes?: string }) =>
   client.post(`/invoices/${invoiceId}/payments`, data).then(r => r.data);
 
 export const deleteInvoice = (id: string) =>

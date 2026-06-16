@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
-import { Plus, Trash2, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import { getOrders, createOrder, updateOrderStatus, deleteOrder } from '../../api/orders';
 import { getCustomers } from '../../api/customers';
 import { getExaminations } from '../../api/examinations';
@@ -13,6 +13,7 @@ import { Input, Select, Textarea } from '../../components/ui/Input';
 import { OrderStatusBadge, InvoiceStatusBadge } from '../../components/ui/Badge';
 import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { formatKWD, formatDate } from '../../utils/format';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 
 const statusTabs: { key: OrderStatus | 'ALL'; label: string }[] = [
   { key: 'ALL', label: 'All' },
@@ -28,6 +29,8 @@ export default function OrdersPage() {
   const [isOpen, setIsOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [customerSelectValue, setCustomerSelectValue] = useState('');
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ['orders', activeTab],
@@ -64,6 +67,7 @@ export default function OrdersPage() {
   const openCreate = () => {
     reset({ items: [{ inventoryItemId: null, customItemName: '', quantity: 1, price: '' }] });
     setSelectedCustomer('');
+    setCustomerSelectValue('');
     setIsOpen(true);
   };
 
@@ -95,6 +99,15 @@ export default function OrdersPage() {
 
   const orderTotal = (order: Order) => order.items.reduce((s, i) => s + i.price * i.quantity, 0);
 
+  const filteredOrders = (orders ?? []).filter(order => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      order.customer?.name?.toLowerCase().includes(q) ||
+      order.customer?.phone?.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="space-y-4">
       {/* Tabs + Add */}
@@ -110,12 +123,43 @@ export default function OrdersPage() {
         <Button leftIcon={<Plus size={16} />} onClick={openCreate}>New Order</Button>
       </div>
 
+      {/* Search Bar */}
+      <div className="relative">
+        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          id="order-search"
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search by customer name or phone..."
+          className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-shadow shadow-sm"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+          >
+            <X size={15} />
+          </button>
+        )}
+      </div>
+
       {/* Orders List */}
       <div className="space-y-3">
-        {orders?.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-200 py-12 text-center text-sm text-slate-500">No orders found</div>
+        {filteredOrders.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 py-12 text-center">
+            {searchQuery ? (
+              <>
+                <Search size={28} className="mx-auto text-slate-300 mb-2" />
+                <p className="text-sm font-medium text-slate-500">No results for &ldquo;{searchQuery}&rdquo;</p>
+                <p className="text-xs text-slate-400 mt-1">Try searching by a different name or phone number</p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">No orders found</p>
+            )}
+          </div>
         ) : (
-          orders?.map(order => (
+          filteredOrders.map(order => (
             <div key={order.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div
                 className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-50 transition-colors"
@@ -191,11 +235,20 @@ export default function OrdersPage() {
       <Modal isOpen={isOpen} onClose={() => { setIsOpen(false); reset({}); setSelectedCustomer(''); }} title="New Order" size="xl">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Select label="Customer *" {...register('customerId', { required: true })}
-              onChange={(e) => { setSelectedCustomer(e.target.value); setValue('customerId', e.target.value); setValue('examinationId', ''); }}>
-              <option value="">Select customer...</option>
-              {customers?.map(c => <option key={c.id} value={c.id}>{c.name} — {c.phone}</option>)}
-            </Select>
+            <SearchableSelect
+              label="Customer *"
+              placeholder="Select customer..."
+              searchPlaceholder="Search by name or phone..."
+              options={(customers ?? []).map(c => ({ value: c.id, label: c.name, sublabel: c.phone }))}
+              value={customerSelectValue}
+              onChange={val => {
+                setCustomerSelectValue(val);
+                setSelectedCustomer(val);
+                setValue('customerId', val);
+                setValue('examinationId', '');
+              }}
+              required
+            />
             <Select label="Examination" {...register('examinationId')} disabled={!watchCustomer}>
               <option value="">No examination</option>
               {examinations?.map(e => <option key={e.id} value={e.id}>{formatDate(e.date)}{e.doctor ? ` — Dr. ${e.doctor}` : ''}</option>)}
@@ -246,7 +299,7 @@ export default function OrdersPage() {
           <Textarea label="Notes" placeholder="Special instructions..." {...register('notes')} />
 
           <div className="flex gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => { setIsOpen(false); reset({}); setSelectedCustomer(''); }} className="flex-1">Cancel</Button>
+            <Button type="button" variant="secondary" onClick={() => { setIsOpen(false); reset({}); setSelectedCustomer(''); setCustomerSelectValue(''); }} className="flex-1">Cancel</Button>
             <Button type="submit" isLoading={isSubmitting} className="flex-1">Create Order</Button>
           </div>
         </form>

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { Plus, DollarSign, Printer, ChevronDown, ChevronUp, Trash2, ShoppingBag, Edit2 } from 'lucide-react';
+import { Plus, DollarSign, Printer, ChevronDown, ChevronUp, Trash2, ShoppingBag, Edit2, Search, X } from 'lucide-react';
 import PeriodCollectiveReport from './PeriodCollectiveReport';
 import { getInvoices, createInvoice, addPayment, deleteInvoice, updateInvoice, CreateInvoicePayload } from '../../api/invoices';
 import { getOrders } from '../../api/orders';
@@ -15,6 +15,7 @@ import { InvoiceStatusBadge, OrderStatusBadge } from '../../components/ui/Badge'
 import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { formatKWD, formatDate } from '../../utils/format';
 import { useAuth } from '../../context/AuthContext';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 
 const tabs: { key: InvoiceStatus | 'ALL'; label: string }[] = [
   { key: 'ALL', label: 'All' },
@@ -47,6 +48,7 @@ export default function InvoicesPage() {
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Create form state
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -201,13 +203,22 @@ export default function InvoicesPage() {
     if (!paymentInvoice) return;
     paymentMut.mutate({
       id: paymentInvoice.id,
-      data: { amount: parseFloat(data.amount), method: data.method, notes: data.notes },
+      data: { amount: parseFloat(data.amount), method: data.method, date: data.date || undefined, notes: data.notes || undefined },
     });
   };
 
   if (isLoading) return <PageLoader />;
 
-  const totalOutstanding = invoices?.reduce((s, i) => s + (i.totalAmount - i.paidAmount), 0) ?? 0;
+  const filteredInvoices = (invoices ?? []).filter(inv => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      inv.customer?.name?.toLowerCase().includes(q) ||
+      inv.customer?.phone?.toLowerCase().includes(q)
+    );
+  });
+
+  const totalOutstanding = filteredInvoices.reduce((s, i) => s + (i.totalAmount - i.paidAmount), 0);
 
   return (
     <div className="space-y-4">
@@ -215,11 +226,11 @@ export default function InvoicesPage() {
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Total Billed</p>
-          <p className="text-xl font-bold text-slate-900 mt-1">{formatKWD(invoices?.reduce((s, i) => s + i.totalAmount, 0) ?? 0)}</p>
+          <p className="text-xl font-bold text-slate-900 mt-1">{formatKWD(filteredInvoices.reduce((s, i) => s + i.totalAmount, 0))}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Total Collected</p>
-          <p className="text-xl font-bold text-emerald-600 mt-1">{formatKWD(invoices?.reduce((s, i) => s + i.paidAmount, 0) ?? 0)}</p>
+          <p className="text-xl font-bold text-emerald-600 mt-1">{formatKWD(filteredInvoices.reduce((s, i) => s + i.paidAmount, 0))}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">Outstanding</p>
@@ -238,6 +249,27 @@ export default function InvoicesPage() {
           ))}
         </div>
         <Button leftIcon={<Plus size={16} />} onClick={() => setIsCreateOpen(true)}>New Invoice</Button>
+      </div>
+
+      {/* Search Bar */}
+      <div className="relative">
+        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          id="invoice-search"
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search by customer name or phone..."
+          className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-shadow shadow-sm"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+          >
+            <X size={15} />
+          </button>
+        )}
       </div>
 
       {/* Period: من — إلى */}
@@ -271,23 +303,33 @@ export default function InvoicesPage() {
       </div>
 
       {periodActive && appliedPeriod ? (
-        invoices?.length === 0 ? (
+        filteredInvoices.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 py-12 text-center text-sm text-slate-500">
             No invoices found for this period
           </div>
         ) : (
           <PeriodCollectiveReport
-            invoices={invoices!}
+            invoices={filteredInvoices}
             dateFrom={appliedPeriod.from}
             dateTo={appliedPeriod.to}
           />
         )
       ) : (
       <div className="space-y-3">
-        {invoices?.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-200 py-12 text-center text-sm text-slate-500">No invoices found</div>
+        {filteredInvoices.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 py-12 text-center">
+            {searchQuery ? (
+              <>
+                <Search size={28} className="mx-auto text-slate-300 mb-2" />
+                <p className="text-sm font-medium text-slate-500">No results for &ldquo;{searchQuery}&rdquo;</p>
+                <p className="text-xs text-slate-400 mt-1">Try searching by a different name or phone number</p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">No invoices found</p>
+            )}
+          </div>
         ) : (
-          invoices?.map(inv => (
+          filteredInvoices.map(inv => (
             <div key={inv.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-50 transition-colors"
                 onClick={() => setExpanded(expanded === inv.id ? null : inv.id)}>
@@ -357,13 +399,41 @@ export default function InvoicesPage() {
                   {/* Payment history */}
                   {inv.payments && inv.payments.length > 0 && (
                     <div>
-                      <p className="text-xs font-medium text-slate-500 mb-2">Payment History</p>
-                      {inv.payments.map(p => (
-                        <div key={p.id} className="flex justify-between text-sm py-1">
-                          <span className="text-slate-600">{formatDate(p.date)} · {p.method}</span>
-                          <span className="font-medium text-emerald-600">{formatKWD(p.amount)}</span>
-                        </div>
-                      ))}
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Payment History ({inv.payments.length})</p>
+                      <div className="rounded-lg border border-slate-200 overflow-hidden">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="px-3 py-2 text-left font-semibold text-slate-500 w-8">#</th>
+                              <th className="px-3 py-2 text-left font-semibold text-slate-500">Date</th>
+                              <th className="px-3 py-2 text-left font-semibold text-slate-500">Method</th>
+                              <th className="px-3 py-2 text-left font-semibold text-slate-500">Notes</th>
+                              <th className="px-3 py-2 text-right font-semibold text-slate-500">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {inv.payments.map((p, idx) => (
+                              <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="px-3 py-2 text-slate-400 font-medium">{idx + 1}</td>
+                                <td className="px-3 py-2 text-slate-700 font-medium">{formatDate(p.date)}</td>
+                                <td className="px-3 py-2">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-sky-50 text-sky-700 border border-sky-100">
+                                    {p.method}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-slate-400 italic">{p.notes || '—'}</td>
+                                <td className="px-3 py-2 text-right font-semibold text-emerald-600">{formatKWD(p.amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-emerald-50 border-t-2 border-emerald-200">
+                              <td colSpan={4} className="px-3 py-2 text-xs font-semibold text-emerald-700">Total Paid</td>
+                              <td className="px-3 py-2 text-right text-sm font-bold text-emerald-700">{formatKWD(inv.paidAmount)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
                     </div>
                   )}
 
@@ -405,14 +475,15 @@ export default function InvoicesPage() {
           )}
 
           {/* Customer selection */}
-          <Select
-            label="Customer *"
+          <SearchableSelect
+            label="Customer"
+            placeholder="Select customer..."
+            searchPlaceholder="Search by name or phone..."
+            options={(customers ?? []).map(c => ({ value: c.id, label: c.name, sublabel: c.phone }))}
             value={selectedCustomerId}
-            onChange={e => { setSelectedCustomerId(e.target.value); setSelectedOrderIds(new Set()); setCreateError(''); }}
-          >
-            <option value="">Select customer...</option>
-            {customers?.map(c => <option key={c.id} value={c.id}>{c.name} — {c.phone}</option>)}
-          </Select>
+            onChange={val => { setSelectedCustomerId(val); setSelectedOrderIds(new Set()); setCreateError(''); }}
+            required
+          />
 
           {/* Order selection */}
           {selectedCustomerId && (
@@ -592,14 +663,22 @@ export default function InvoicesPage() {
               <div className="flex justify-between"><span className="text-slate-500">Already Paid</span><span className="font-medium text-emerald-600">{formatKWD(paymentInvoice.paidAmount)}</span></div>
               <div className="flex justify-between border-t border-slate-200 pt-1 mt-1"><span className="text-slate-500 font-medium">Remaining</span><span className="font-bold text-red-600">{formatKWD(paymentInvoice.totalAmount - paymentInvoice.paidAmount)}</span></div>
             </div>
-            <Input
-              label="Amount (KWD) *"
-              type="number"
-              step="0.001"
-              placeholder="0.000"
-              defaultValue={(paymentInvoice.totalAmount - paymentInvoice.paidAmount).toFixed(3)}
-              {...regPay('amount', { required: true })}
-            />
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Amount (KWD) *"
+                type="number"
+                step="0.001"
+                placeholder="0.000"
+                defaultValue={(paymentInvoice.totalAmount - paymentInvoice.paidAmount).toFixed(3)}
+                {...regPay('amount', { required: true })}
+              />
+              <Input
+                label="Payment Date *"
+                type="date"
+                defaultValue={new Date().toISOString().slice(0, 10)}
+                {...regPay('date', { required: true })}
+              />
+            </div>
             <Select label="Method *" {...regPay('method', { required: true })}>
               <option value="">Select...</option>
               <option value="Cash">Cash</option>
@@ -607,7 +686,7 @@ export default function InvoicesPage() {
               <option value="Credit Card">Credit Card</option>
               <option value="Bank Transfer">Bank Transfer</option>
             </Select>
-            <Input label="Notes" {...regPay('notes')} />
+            <Input label="Notes" placeholder="Optional notes..." {...regPay('notes')} />
             <div className="flex gap-3 pt-2">
               <Button type="button" variant="secondary" onClick={() => { setPaymentInvoice(null); resetPay({}); }} className="flex-1">Cancel</Button>
               <Button type="submit" isLoading={isPaying} className="flex-1">Record Payment</Button>

@@ -7,7 +7,7 @@ import { z } from 'zod';
 import {
   ArrowLeft, Plus, Printer, Phone, Mail, MapPin, Calendar,
   Eye, ShoppingBag, FileText, Trash2, Edit2, Star, XCircle,
-  Users, Search, UserPlus, Link2, Unlink,
+  Users, Search, UserPlus, Link2, Unlink, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { getCustomerReport, getCustomers, linkChild, unlinkChild, createCustomer } from '../../api/customers';
 import { createExamination, updateExamination, deleteExamination } from '../../api/examinations';
@@ -49,6 +49,7 @@ export default function CustomerProfile() {
   const [examOpen, setExamOpen] = useState(false);
   const [editingExam, setEditingExam] = useState<Examination | null>(null);
   const [examError, setExamError] = useState('');
+  const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null);
 
   // Family members state
   const [familyOpen, setFamilyOpen] = useState(false);
@@ -408,20 +409,74 @@ export default function CustomerProfile() {
             <p className="px-5 py-8 text-center text-sm text-slate-500">No invoices yet</p>
           ) : (
             report.invoices.map(inv => (
-              <div key={inv.id} className="px-5 py-3 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{formatDate(inv.createdAt)}</p>
-                  {inv.paymentMethod && <p className="text-xs text-slate-500">{inv.paymentMethod}</p>}
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right text-sm">
-                    <p className="font-medium text-slate-900">{formatKWD(inv.totalAmount)}</p>
-                    {inv.paidAmount < inv.totalAmount && (
-                      <p className="text-xs text-red-600">Remaining: {formatKWD(inv.totalAmount - inv.paidAmount)}</p>
+              <div key={inv.id}>
+                <div
+                  className="px-5 py-3 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+                  onClick={() => setExpandedInvoice(expandedInvoice === inv.id ? null : inv.id)}
+                >
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">{formatDate(inv.createdAt)}</p>
+                    {inv.paymentMethod && <p className="text-xs text-slate-500">{inv.paymentMethod}</p>}
+                    {inv.payments && inv.payments.length > 0 && (
+                      <p className="text-xs text-slate-400 mt-0.5">{inv.payments.length} payment{inv.payments.length !== 1 ? 's' : ''}</p>
                     )}
                   </div>
-                  <InvoiceStatusBadge status={inv.status} />
+                  <div className="flex items-center gap-4">
+                    <div className="text-right text-sm">
+                      <p className="font-medium text-slate-900">{formatKWD(inv.totalAmount)}</p>
+                      {inv.paidAmount < inv.totalAmount && (
+                        <p className="text-xs text-red-600">Remaining: {formatKWD(inv.totalAmount - inv.paidAmount)}</p>
+                      )}
+                    </div>
+                    <InvoiceStatusBadge status={inv.status} />
+                    {inv.payments && inv.payments.length > 0 && (
+                      expandedInvoice === inv.id
+                        ? <ChevronUp size={14} className="text-slate-400" />
+                        : <ChevronDown size={14} className="text-slate-400" />
+                    )}
+                  </div>
                 </div>
+
+                {/* Expandable payment breakdown */}
+                {expandedInvoice === inv.id && inv.payments && inv.payments.length > 0 && (
+                  <div className="px-5 pb-4 bg-slate-50 border-t border-slate-100">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide my-2">Payment Breakdown</p>
+                    <div className="rounded-lg border border-slate-200 overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-white border-b border-slate-200">
+                            <th className="px-3 py-2 text-left font-semibold text-slate-500 w-8">#</th>
+                            <th className="px-3 py-2 text-left font-semibold text-slate-500">Date</th>
+                            <th className="px-3 py-2 text-left font-semibold text-slate-500">Method</th>
+                            <th className="px-3 py-2 text-left font-semibold text-slate-500">Notes</th>
+                            <th className="px-3 py-2 text-right font-semibold text-slate-500">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {inv.payments.map((p, idx) => (
+                            <tr key={p.id} className="bg-white hover:bg-slate-50 transition-colors">
+                              <td className="px-3 py-2 text-slate-400 font-medium">{idx + 1}</td>
+                              <td className="px-3 py-2 text-slate-700 font-medium">{formatDate(p.date)}</td>
+                              <td className="px-3 py-2">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-sky-50 text-sky-700 border border-sky-100">
+                                  {p.method}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-slate-400 italic">{p.notes || '—'}</td>
+                              <td className="px-3 py-2 text-right font-semibold text-emerald-600">{formatKWD(p.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-emerald-50 border-t-2 border-emerald-200">
+                            <td colSpan={4} className="px-3 py-2 text-xs font-semibold text-emerald-700">Total Paid</td>
+                            <td className="px-3 py-2 text-right text-sm font-bold text-emerald-700">{formatKWD(inv.paidAmount)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           )}
