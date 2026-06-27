@@ -244,7 +244,22 @@ router.get('/staff', requireRole('ADMIN'), async (req: AuthRequest, res: Respons
     day.collected += inv.paidAmount;
   }
 
-  // Convert to sorted array (highest billed first)
+  // Ensure every active user appears — even those with zero sales
+  for (const u of allUsers) {
+    if (!statsMap[u.id]) {
+      statsMap[u.id] = {
+        user: u,
+        totalOrders: 0,
+        totalOrderValue: 0,
+        totalInvoices: 0,
+        totalBilled: 0,
+        totalCollected: 0,
+        daily: {},
+      };
+    }
+  }
+
+  // Convert to sorted array (highest billed first, zero-sales go to bottom)
   const staffStats = Object.values(statsMap)
     .sort((a, b) => b.totalBilled - a.totalBilled)
     .map(s => ({
