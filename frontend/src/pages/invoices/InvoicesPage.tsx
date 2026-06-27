@@ -39,7 +39,7 @@ function orderTotal(order: Order): number {
 export default function InvoicesPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const [activeTab, setActiveTab] = useState<InvoiceStatus | 'ALL'>('ALL');
   const [dateFromInput, setDateFromInput] = useState('');
   const [dateToInput, setDateToInput] = useState('');
@@ -220,21 +220,46 @@ export default function InvoicesPage() {
 
   const totalOutstanding = filteredInvoices.reduce((s, i) => s + (i.totalAmount - i.paidAmount), 0);
 
+  // For employees: compute today-only, self-only stats
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayMyInvoices = !isAdmin
+    ? (invoices ?? []).filter(inv => {
+        const isToday = new Date(inv.createdAt) >= todayStart;
+        const isMine  = inv.createdBy?.id === user?.id;
+        return isToday && isMine;
+      })
+    : [];
+
+  const summaryInvoices  = isAdmin ? filteredInvoices : todayMyInvoices;
+  const summaryBilled    = summaryInvoices.reduce((s, i) => s + i.totalAmount, 0);
+  const summaryCollected = summaryInvoices.reduce((s, i) => s + i.paidAmount, 0);
+  const summaryOutstanding = summaryInvoices.reduce((s, i) => s + (i.totalAmount - i.paidAmount), 0);
+
   return (
     <div className="space-y-4">
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wide">Total Billed</p>
-          <p className="text-xl font-bold text-slate-900 mt-1">{formatKWD(filteredInvoices.reduce((s, i) => s + i.totalAmount, 0))}</p>
+          <p className="text-xs text-slate-500 uppercase tracking-wide">
+            {isAdmin ? 'Total Billed' : "Today's Billed"}
+          </p>
+          <p className="text-xl font-bold text-slate-900 mt-1">{formatKWD(summaryBilled)}</p>
+          {!isAdmin && <p className="text-xs text-slate-400 mt-0.5">Your sales today</p>}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wide">Total Collected</p>
-          <p className="text-xl font-bold text-emerald-600 mt-1">{formatKWD(filteredInvoices.reduce((s, i) => s + i.paidAmount, 0))}</p>
+          <p className="text-xs text-slate-500 uppercase tracking-wide">
+            {isAdmin ? 'Total Collected' : "Today's Collected"}
+          </p>
+          <p className="text-xl font-bold text-emerald-600 mt-1">{formatKWD(summaryCollected)}</p>
+          {!isAdmin && <p className="text-xs text-slate-400 mt-0.5">Payments received today</p>}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wide">Outstanding</p>
-          <p className="text-xl font-bold text-red-600 mt-1">{formatKWD(totalOutstanding)}</p>
+          <p className="text-xs text-slate-500 uppercase tracking-wide">
+            {isAdmin ? 'Outstanding' : "Today's Outstanding"}
+          </p>
+          <p className="text-xl font-bold text-red-600 mt-1">{formatKWD(summaryOutstanding)}</p>
+          {!isAdmin && <p className="text-xs text-slate-400 mt-0.5">{todayMyInvoices.length} invoice{todayMyInvoices.length !== 1 ? 's' : ''} today</p>}
         </div>
       </div>
 

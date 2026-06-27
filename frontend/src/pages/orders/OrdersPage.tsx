@@ -236,7 +236,7 @@ export default function OrdersPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <SearchableSelect
-              label="Customer *"
+              label="Customer "
               placeholder="Select customer..."
               searchPlaceholder="Search by name or phone..."
               options={(customers ?? []).map(c => ({ value: c.id, label: c.name, sublabel: c.phone }))}

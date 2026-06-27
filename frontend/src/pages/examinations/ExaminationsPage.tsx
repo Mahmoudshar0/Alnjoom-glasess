@@ -60,7 +60,7 @@ export default function ExaminationsPage() {
     queryFn: () => getCustomers(),
   });
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<ExamForm>({
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<ExamForm>({
     resolver: zodResolver(examSchema),
   });
 
@@ -270,7 +270,7 @@ export default function ExaminationsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <SearchableSelect
-              label="Customer *"
+              label="Customer "
               placeholder="Select customer..."
               searchPlaceholder="Search by name or phone..."
               options={(customers ?? []).map(c => ({ value: c.id, label: c.name, sublabel: c.phone }))}
