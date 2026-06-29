@@ -132,6 +132,9 @@ Eye-shop-mahmoudRepo/
 │   ├── prisma/
 │   │   ├── schema.prisma            # Database schema (see §8)
 │   │   ├── seed.ts                  # Admin user seed
+│   │   ├── seed-mock.ts             # Full mock data seed (customers, exams, inventory, orders, invoices)
+│   │   ├── seed-employees.ts        # 3 employee accounts seed
+│   │   ├── seed-employee-data.ts    # Employee-linked customers/orders/invoices seed
 │   │   └── migrations/              # Prisma migration history
 │   ├── scripts/
 │   │   ├── backup.sh                # CLI backup script
@@ -583,6 +586,13 @@ All authenticated users (Admin can override amounts/status)
 ### Business Value
 Billing and collection management with per-installment audit trail.
 
+### Role-Specific Summary Cards
+The 3 summary cards at the top of the Invoices page are **role-aware**:
+| Role | Card Data Source | Labels |
+|------|-----------------|--------|
+| **Admin** | All filtered invoices (respects tab/date/search) | Total Billed / Total Collected / Outstanding |
+| **Employee** | Only today's invoices created by the logged-in user | Today's Billed / Today's Collected / Today's Outstanding |
+
 ### Internal Flow
 ```
 Invoices List (filter by status, date range, customer)
@@ -745,10 +755,12 @@ Financial Reports (Admin) (GET /api/reports/financial)
 
 Staff Performance (Admin) (GET /api/reports/staff?dateFrom=&dateTo=)
     ├─► Orders grouped by createdById (with items for value calc)
-    ├─► Invoices grouped by createdById
+    ├─► Invoices grouped by createdById (with customer name)
     ├─► Per-user: totalOrders, totalOrderValue, totalInvoices, totalBilled, totalCollected
-    ├─► Per-user daily breakdown array (date, orders, orderValue, invoices, billed, collected)
-    └─► Sorted by totalBilled descending
+    ├─► Per-user daily breakdown: date, orders, orderValue, invoices, billed, collected
+    ├─► Per-day invoiceRows[]: { id, customerName, totalAmount, paidAmount }
+    ├─► ALL active users included — zero-sales employees appear with empty stats
+    └─► Sorted by totalBilled descending (zero-sales at bottom)
 ```
 
 ### Files Involved
@@ -768,7 +780,7 @@ All tables aggregated via Prisma `count`, `groupBy`, `aggregate`; Staff: `Order.
 
 ---
 
-## Feature: Staff Performance Report *(Added 2026-06-16)*
+## Feature: Staff Performance Report *(Added 2026-06-16, Updated 2026-06-29)*
 
 ### Purpose
 Per-employee sales analytics with daily breakdown — orders created, invoices issued, revenue billed and collected.
@@ -797,8 +809,9 @@ Holds staff accountable for daily targets. Identifies top performers and slow da
 | Type | Files |
 |------|-------|
 | Frontend Page | `frontend/src/pages/reports/StaffPerformance.tsx` |
-| API Client | `frontend/src/api/reports.ts` (`getStaffReport`, `StaffMemberStat`, `StaffDayData`, `StaffReport`) |
+| API Client | `frontend/src/api/reports.ts` (`getStaffReport`, `StaffMemberStat`, `StaffDayData`, `StaffInvoiceRow`, `StaffReport`) |
 | Backend | `backend/src/routes/reports.ts` (`GET /staff`) |
+| Compiled JS | `backend/dist/routes/reports.js` (patched directly for immediate effect) |
 
 ### Database Tables
 `Order` (createdById, createdAt, items), `Invoice` (createdById, createdAt, totalAmount, paidAmount), `User`
@@ -820,13 +833,56 @@ Holds staff accountable for daily targets. Identifies top performers and slow da
       "totalBilled": 3200.000,
       "totalCollected": 2900.000,
       "daily": [
-        { "date": "2026-06-15", "orders": 3, "orderValue": 800.000, "invoices": 2, "billed": 750.000, "collected": 700.000 }
+        {
+          "date": "2026-06-15",
+          "orders": 3,
+          "orderValue": 800.000,
+          "invoices": 2,
+          "billed": 750.000,
+          "collected": 700.000,
+          "invoiceRows": [
+            { "id": "...", "customerName": "محمد علي", "totalAmount": 450.000, "paidAmount": 450.000 },
+            { "id": "...", "customerName": "فاطمة الزهراني", "totalAmount": 300.000, "paidAmount": 250.000 }
+          ]
+        }
       ]
     }
   ],
-  "totalUsers": 4
+  "totalUsers": 5
 }
 ```
+
+### UI Behaviour (Expanded Card)
+Each day renders as its own section:
+- **Day header**: date label + order count chip + collection % (color-coded green/amber/red)
+- **Invoice table**: Customer | Billed | Collected | Balance | Click icon → opens Invoice Detail Modal
+- **Day Total dark footer**: aggregated billed / collected / collection %
+- **Grand Total bar** at bottom of the full expanded card
+
+### Invoice Detail Modal *(Added 2026-06-29)*
+Clicking any invoice row in the daily breakdown table opens a full-detail modal **without navigating away** from the Staff Performance page.
+
+**Trigger**: Click anywhere on an invoice `<tr>` row (entire row is clickable, cursor is pointer, row highlights sky-blue on hover).
+
+**Modal Sections**:
+| Section | Content |
+|---------|---------|
+| **Header** | Short invoice ID (last 8 chars) · Print button (new tab `/invoices/:id/print`) · Close (×) |
+| **Meta cards** | Customer name & phone · Invoice date · Status badge (Paid/Partial/Unpaid) + payment method |
+| **Orders** | Each linked order with status badge + item table (name, SKU/type, qty, unit price, line total, item notes) |
+| **Payment History** | Numbered table: date · method badge · amount for each installment |
+| **Financial Summary** | Total Billed / Total Collected / Outstanding Balance + animated collection progress bar |
+| **Notes** | Amber box — only shown if invoice has notes |
+
+**Behaviour**:
+- Fetches full invoice via `GET /api/invoices/:id` using TanStack Query (cached after first open).
+- Shows spinner while loading.
+- `Escape` key or clicking backdrop closes the modal.
+- Print button opens printable invoice in a new tab without closing the modal.
+- `selectedInvoiceId` state in `StaffPerformance` controls visibility.
+
+**Files changed**:
+- `frontend/src/pages/reports/StaffPerformance.tsx` — `InvoiceDetailModal` component added; `StaffCard` receives `onInvoiceClick` prop; `selectedInvoiceId` state added to page.
 
 ---
 

@@ -3,12 +3,16 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Users, TrendingUp, ShoppingBag, FileText,
   ChevronDown, ChevronUp, Trophy, Award, Medal,
-  Calendar, BarChart2,
+  Calendar, BarChart2, ExternalLink,
+  X, CreditCard, Package, Printer, User,
+  CheckCircle, Clock, AlertCircle,
 } from 'lucide-react';
 import { getStaffReport, StaffMemberStat } from '../../api/reports';
+import { getInvoice } from '../../api/invoices';
 import { PageLoader } from '../../components/ui/LoadingSpinner';
 import { formatKWD, formatDate } from '../../utils/format';
 import Button from '../../components/ui/Button';
+import { Invoice, InvoiceStatus } from '../../types';
 
 function toApiDate(dateStr: string, endOfDay = false) {
   const d = new Date(dateStr);
@@ -37,16 +41,308 @@ function CollectionBar({ collected, billed }: { collected: number; billed: numbe
   );
 }
 
+/* ─────────────────────────── Invoice Detail Modal ─────────────────────────── */
+
+const STATUS_CONFIG: Record<InvoiceStatus, { label: string; icon: React.ReactNode; cls: string; bg: string }> = {
+  PAID:    { label: 'Paid',    icon: <CheckCircle size={14} />, cls: 'text-emerald-700', bg: 'bg-emerald-100' },
+  PARTIAL: { label: 'Partial', icon: <Clock size={14} />,       cls: 'text-amber-700',   bg: 'bg-amber-100'   },
+  UNPAID:  { label: 'Unpaid',  icon: <AlertCircle size={14} />, cls: 'text-red-700',     bg: 'bg-red-100'     },
+};
+
+function InvoiceDetailModal({
+  invoiceId,
+  onClose,
+}: {
+  invoiceId: string;
+  onClose: () => void;
+}) {
+  const { data: invoice, isLoading } = useQuery<Invoice>({
+    queryKey: ['invoice', invoiceId],
+    queryFn: () => getInvoice(invoiceId),
+    enabled: !!invoiceId,
+  });
+
+  const handlePrint = () => {
+    window.open(`/invoices/${invoiceId}/print`, '_blank');
+  };
+
+  return (
+    /* Backdrop */
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
+
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-sky-600 flex items-center justify-center">
+              <FileText size={18} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Invoice Details</h2>
+              {invoice && (
+                <p className="text-xs text-slate-400 font-mono">#{invoice.id.slice(-8).toUpperCase()}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {invoice && (
+              <button
+                onClick={handlePrint}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-sky-600 hover:bg-sky-50 border border-sky-200 transition-colors"
+                title="Print invoice"
+              >
+                <Printer size={13} />
+                Print
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Body ── */}
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-slate-400">Loading invoice…</p>
+            </div>
+          ) : !invoice ? (
+            <p className="text-sm text-slate-400 text-center py-10">Invoice not found.</p>
+          ) : (
+            <>
+              {/* ── Meta row ── */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {/* Customer */}
+                <div className="bg-slate-50 rounded-xl p-3 flex items-start gap-2.5">
+                  <User size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs text-slate-400 font-medium">Customer</p>
+                    <p className="text-sm font-bold text-slate-900 truncate">{invoice.customer?.name ?? '—'}</p>
+                    {invoice.customer?.phone && (
+                      <p className="text-xs text-slate-500">{invoice.customer.phone}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Date */}
+                <div className="bg-slate-50 rounded-xl p-3 flex items-start gap-2.5">
+                  <Calendar size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-slate-400 font-medium">Date</p>
+                    <p className="text-sm font-bold text-slate-900">{formatDate(invoice.createdAt)}</p>
+                  </div>
+                </div>
+
+                {/* Status */}
+                <div className="bg-slate-50 rounded-xl p-3 flex items-start gap-2.5 col-span-2 sm:col-span-1">
+                  <CreditCard size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-slate-400 font-medium">Status</p>
+                    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full mt-0.5 ${STATUS_CONFIG[invoice.status].bg} ${STATUS_CONFIG[invoice.status].cls}`}>
+                      {STATUS_CONFIG[invoice.status].icon}
+                      {STATUS_CONFIG[invoice.status].label}
+                    </span>
+                    {invoice.paymentMethod && (
+                      <p className="text-xs text-slate-500 mt-0.5">{invoice.paymentMethod}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Orders & Items ── */}
+              {invoice.orders && invoice.orders.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                    <ShoppingBag size={12} />
+                    Orders ({invoice.orders.length})
+                  </p>
+                  <div className="space-y-2">
+                    {invoice.orders.map((order, oi) => (
+                      <div key={order.id} className="border border-slate-200 rounded-xl overflow-hidden">
+                        {/* Order header */}
+                        <div className="flex items-center justify-between bg-slate-50 px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Package size={13} className="text-slate-400" />
+                            <span className="text-xs font-semibold text-slate-700">Order #{oi + 1}</span>
+                            <span className="text-xs text-slate-400 font-mono">#{order.id.slice(-6).toUpperCase()}</span>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            order.status === 'DELIVERED' ? 'bg-emerald-100 text-emerald-700' :
+                            order.status === 'READY'     ? 'bg-sky-100 text-sky-700' :
+                            order.status === 'IN_PROGRESS' ? 'bg-amber-100 text-amber-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {order.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        {/* Items table */}
+                        {order.items && order.items.length > 0 && (
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-slate-100">
+                                <th className="px-3 py-1.5 text-left font-medium text-slate-400">Item</th>
+                                <th className="px-3 py-1.5 text-center font-medium text-slate-400">Qty</th>
+                                <th className="px-3 py-1.5 text-right font-medium text-slate-400">Unit Price</th>
+                                <th className="px-3 py-1.5 text-right font-medium text-slate-400">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {order.items.map((item) => {
+                                const name = item.inventoryItem
+                                  ? [item.inventoryItem.brand, item.inventoryItem.model].filter(Boolean).join(' ') || item.inventoryItem.type
+                                  : item.customItemName || 'Custom Item';
+                                const typeLabel = item.inventoryItem
+                                  ? item.inventoryItem.type.charAt(0) + item.inventoryItem.type.slice(1).toLowerCase()
+                                  : null;
+                                return (
+                                  <tr key={item.id} className="hover:bg-slate-50">
+                                    <td className="px-3 py-2">
+                                      <p className="font-medium text-slate-800">{name}</p>
+                                      {typeLabel && (
+                                        <p className="text-slate-400 text-[10px]">{typeLabel}{item.inventoryItem?.sku ? ` · ${item.inventoryItem.sku}` : ''}</p>
+                                      )}
+                                      {item.notes && <p className="text-slate-400 text-[10px] italic">{item.notes}</p>}
+                                    </td>
+                                    <td className="px-3 py-2 text-center text-slate-600">{item.quantity}</td>
+                                    <td className="px-3 py-2 text-right text-slate-600">{formatKWD(item.price)}</td>
+                                    <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatKWD(item.price * item.quantity)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                        {order.notes && (
+                          <p className="px-3 py-2 text-xs text-slate-400 italic border-t border-slate-100">Note: {order.notes}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Payment History ── */}
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                  <CreditCard size={12} />
+                  Payment History ({invoice.payments?.length ?? 0})
+                </p>
+                {(invoice.payments?.length ?? 0) === 0 ? (
+                  <div className="border border-dashed border-slate-200 rounded-xl px-4 py-6 text-center">
+                    <p className="text-xs text-slate-400">No payments recorded yet</p>
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200">
+                          <th className="px-3 py-2 text-left font-semibold text-slate-500">#</th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-500">Date</th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-500">Method</th>
+                          <th className="px-3 py-2 text-right font-semibold text-slate-500">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {invoice.payments.map((pmt, idx) => (
+                          <tr key={pmt.id} className="hover:bg-slate-50">
+                            <td className="px-3 py-2 text-slate-400">{idx + 1}</td>
+                            <td className="px-3 py-2 text-slate-700">{formatDate(pmt.date)}</td>
+                            <td className="px-3 py-2">
+                              <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-medium text-[11px]">
+                                {pmt.method}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right font-semibold text-emerald-600">{formatKWD(pmt.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {invoice.payments[0]?.notes && (
+                      <p className="px-3 py-2 text-xs text-slate-400 italic border-t border-slate-100">
+                        Note: {invoice.payments[0].notes}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Financial Summary ── */}
+              <div className="rounded-xl bg-slate-900 text-white px-5 py-4 space-y-2.5">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Summary</p>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-300">Total Billed</span>
+                  <span className="text-sm font-bold">{formatKWD(invoice.totalAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-300">Total Collected</span>
+                  <span className="text-sm font-bold text-emerald-400">{formatKWD(invoice.paidAmount)}</span>
+                </div>
+                {invoice.totalAmount - invoice.paidAmount > 0 && (
+                  <div className="flex justify-between items-center pt-1 border-t border-slate-700">
+                    <span className="text-sm text-slate-300">Outstanding Balance</span>
+                    <span className="text-sm font-bold text-red-400">{formatKWD(invoice.totalAmount - invoice.paidAmount)}</span>
+                  </div>
+                )}
+                {/* Collection progress bar */}
+                <div className="pt-1">
+                  <div className="w-full bg-slate-700 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all ${
+                        invoice.status === 'PAID' ? 'bg-emerald-400' :
+                        invoice.status === 'PARTIAL' ? 'bg-amber-400' : 'bg-red-400'
+                      }`}
+                      style={{
+                        width: invoice.totalAmount > 0
+                          ? `${Math.min((invoice.paidAmount / invoice.totalAmount) * 100, 100)}%`
+                          : '0%',
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1 text-right">
+                    {invoice.totalAmount > 0
+                      ? `${((invoice.paidAmount / invoice.totalAmount) * 100).toFixed(0)}% collected`
+                      : '0% collected'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Notes */}
+              {invoice.notes && (
+                <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+                  <p className="text-xs font-semibold text-amber-700 mb-1">Notes</p>
+                  <p className="text-sm text-amber-800">{invoice.notes}</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── Staff Card ─────────────────────────── */
+
 function StaffCard({
   stat,
   rank,
   expanded,
   onToggle,
+  onInvoiceClick,
 }: {
   stat: StaffMemberStat;
   rank: number;
   expanded: boolean;
   onToggle: () => void;
+  onInvoiceClick: (id: string) => void;
 }) {
   const collectionRate = stat.totalBilled > 0
     ? (stat.totalCollected / stat.totalBilled) * 100
@@ -133,79 +429,120 @@ function StaffCard({
                 <Calendar size={13} />
                 Daily Breakdown ({stat.daily.length} day{stat.daily.length !== 1 ? 's' : ''})
               </p>
-              <div className="rounded-lg border border-slate-200 overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="px-3 py-2 text-left font-semibold text-slate-500">Date</th>
-                      <th className="px-3 py-2 text-center font-semibold text-slate-500">Orders</th>
-                      <th className="px-3 py-2 text-right font-semibold text-slate-500 hidden sm:table-cell">Order Value</th>
-                      <th className="px-3 py-2 text-center font-semibold text-slate-500">Invoices</th>
-                      <th className="px-3 py-2 text-right font-semibold text-slate-500">Billed</th>
-                      <th className="px-3 py-2 text-right font-semibold text-slate-500">Collected</th>
-                      <th className="px-3 py-2 text-right font-semibold text-slate-500 hidden sm:table-cell">Collection%</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {stat.daily.map(day => {
-                      const dayPct = day.billed > 0 ? (day.collected / day.billed) * 100 : 0;
-                      const pctColor = dayPct >= 90
-                        ? 'text-emerald-600'
-                        : dayPct >= 60
-                        ? 'text-amber-600'
-                        : day.billed > 0
-                        ? 'text-red-500'
-                        : 'text-slate-400';
-                      return (
-                        <tr key={day.date} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-3 py-2 font-medium text-slate-700">
-                            {formatDate(day.date + 'T00:00:00')}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            {day.orders > 0 ? (
-                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-sky-100 text-sky-700 font-bold">
-                                {day.orders}
+
+              {stat.daily.map(day => {
+                const dayPct = day.billed > 0 ? (day.collected / day.billed) * 100 : 0;
+                const pctColor = dayPct >= 90
+                  ? 'text-emerald-600'
+                  : dayPct >= 60
+                  ? 'text-amber-600'
+                  : day.billed > 0
+                  ? 'text-red-500'
+                  : 'text-slate-400';
+
+                return (
+                  <div key={day.date} className="mb-4 last:mb-0">
+                    {/* Day header */}
+                    <div className="flex items-center justify-between mb-1.5 px-1">
+                      <p className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <Calendar size={11} className="text-slate-400" />
+                        {formatDate(day.date + 'T00:00:00')}
+                      </p>
+                      <div className="flex items-center gap-3 text-xs text-slate-500">
+                        {day.orders > 0 && (
+                          <span className="flex items-center gap-1">
+                            <ShoppingBag size={11} />{day.orders} order{day.orders !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                        <span className={`font-bold ${pctColor}`}>
+                          {day.billed > 0 ? `${dayPct.toFixed(0)}% collected` : 'no invoices'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Invoice rows for this day */}
+                    <div className="rounded-lg border border-slate-200 overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200">
+                            <th className="px-3 py-2 text-left font-semibold text-slate-500">Customer</th>
+                            <th className="px-3 py-2 text-right font-semibold text-slate-500">Billed</th>
+                            <th className="px-3 py-2 text-right font-semibold text-slate-500">Collected</th>
+                            <th className="px-3 py-2 text-right font-semibold text-slate-500 hidden sm:table-cell">Balance</th>
+                            <th className="px-3 py-2 w-8" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(day.invoiceRows ?? []).length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-3 py-3 text-center text-slate-300">No invoices</td>
+                            </tr>
+                          ) : (
+                            (day.invoiceRows ?? []).map(inv => {
+                              const balance = inv.totalAmount - inv.paidAmount;
+                              return (
+                                <tr
+                                  key={inv.id}
+                                  className="hover:bg-sky-50 transition-colors group cursor-pointer"
+                                  onClick={() => onInvoiceClick(inv.id)}
+                                  title="Click to view full invoice details"
+                                >
+                                  <td className="px-3 py-2 font-medium text-slate-800 group-hover:text-sky-700 transition-colors">
+                                    {inv.customerName}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-slate-700">
+                                    {formatKWD(inv.totalAmount)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-semibold text-emerald-600">
+                                    {formatKWD(inv.paidAmount)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right hidden sm:table-cell">
+                                    <span className={balance > 0 ? 'text-red-500 font-semibold' : 'text-slate-400'}>
+                                      {balance > 0 ? formatKWD(balance) : '—'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <span className="inline-flex items-center justify-center w-6 h-6 rounded text-slate-300 group-hover:text-sky-600 group-hover:bg-sky-100 transition-colors">
+                                      <ExternalLink size={12} />
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                        {/* Day totals footer */}
+                        <tfoot>
+                          <tr className="bg-slate-800 text-white">
+                            <td className="px-3 py-1.5 text-slate-400 text-xs">Day Total</td>
+                            <td className="px-3 py-1.5 text-right font-bold">{formatKWD(day.billed)}</td>
+                            <td className="px-3 py-1.5 text-right font-bold text-emerald-400">{formatKWD(day.collected)}</td>
+                            <td className="px-3 py-1.5 text-right hidden sm:table-cell">
+                              <span className={dayPct >= 100 ? 'text-emerald-400' : 'text-amber-400'}>
+                                {dayPct.toFixed(0)}%
                               </span>
-                            ) : <span className="text-slate-300">—</span>}
-                          </td>
-                          <td className="px-3 py-2 text-right text-slate-600 hidden sm:table-cell">
-                            {day.orderValue > 0 ? formatKWD(day.orderValue) : <span className="text-slate-300">—</span>}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            {day.invoices > 0 ? (
-                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-100 text-violet-700 font-bold">
-                                {day.invoices}
-                              </span>
-                            ) : <span className="text-slate-300">—</span>}
-                          </td>
-                          <td className="px-3 py-2 text-right font-medium text-slate-800">
-                            {day.billed > 0 ? formatKWD(day.billed) : <span className="text-slate-300">—</span>}
-                          </td>
-                          <td className="px-3 py-2 text-right font-semibold text-emerald-600">
-                            {day.collected > 0 ? formatKWD(day.collected) : <span className="text-slate-300">—</span>}
-                          </td>
-                          <td className={`px-3 py-2 text-right font-bold hidden sm:table-cell ${pctColor}`}>
-                            {day.billed > 0 ? `${dayPct.toFixed(0)}%` : <span className="text-slate-300">—</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  {/* Totals footer */}
-                  <tfoot>
-                    <tr className="bg-slate-900 text-white">
-                      <td className="px-3 py-2 font-semibold text-slate-300 text-xs">TOTAL</td>
-                      <td className="px-3 py-2 text-center font-bold">{stat.totalOrders}</td>
-                      <td className="px-3 py-2 text-right font-bold hidden sm:table-cell">{formatKWD(stat.totalOrderValue)}</td>
-                      <td className="px-3 py-2 text-center font-bold">{stat.totalInvoices}</td>
-                      <td className="px-3 py-2 text-right font-bold">{formatKWD(stat.totalBilled)}</td>
-                      <td className="px-3 py-2 text-right font-bold text-emerald-400">{formatKWD(stat.totalCollected)}</td>
-                      <td className="px-3 py-2 text-right font-bold text-emerald-400 hidden sm:table-cell">
-                        {collectionRate.toFixed(0)}%
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+                            </td>
+                            <td className="px-3 py-1.5" />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Grand total footer */}
+              <div className="mt-4 rounded-lg bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-300 uppercase tracking-wide">Total</span>
+                <div className="flex items-center gap-6">
+                  <span><span className="text-slate-400">Orders: </span><strong>{stat.totalOrders}</strong></span>
+                  <span><span className="text-slate-400">Invoices: </span><strong>{stat.totalInvoices}</strong></span>
+                  <span><span className="text-slate-400">Billed: </span><strong>{formatKWD(stat.totalBilled)}</strong></span>
+                  <span><span className="text-slate-400">Collected: </span><strong className="text-emerald-400">{formatKWD(stat.totalCollected)}</strong></span>
+                  <span className={`font-bold ${collectionRate >= 90 ? 'text-emerald-400' : collectionRate >= 60 ? 'text-amber-400' : 'text-red-400'}`}>
+                    {collectionRate.toFixed(0)}%
+                  </span>
+                </div>
               </div>
             </>
           )}
@@ -215,12 +552,15 @@ function StaffCard({
   );
 }
 
+/* ─────────────────────────── Main Page ─────────────────────────── */
+
 export default function StaffPerformance() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [appliedFrom, setAppliedFrom] = useState('');
   const [appliedTo, setAppliedTo] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
 
   const params = (appliedFrom && appliedTo)
     ? { dateFrom: toApiDate(appliedFrom, false), dateTo: toApiDate(appliedTo, true) }
@@ -255,6 +595,14 @@ export default function StaffPerformance() {
 
   return (
     <div className="space-y-5">
+
+      {/* Invoice detail modal */}
+      {selectedInvoiceId && (
+        <InvoiceDetailModal
+          invoiceId={selectedInvoiceId}
+          onClose={() => setSelectedInvoiceId(null)}
+        />
+      )}
 
       {/* Date range filter */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-4">
@@ -330,6 +678,7 @@ export default function StaffPerformance() {
               rank={i}
               expanded={expandedId === stat.user.id}
               onToggle={() => setExpandedId(expandedId === stat.user.id ? null : stat.user.id)}
+              onInvoiceClick={(id) => setSelectedInvoiceId(id)}
             />
           ))}
         </div>

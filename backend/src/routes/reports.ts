@@ -150,6 +150,7 @@ router.get('/staff', requireRole('ADMIN'), async (req: AuthRequest, res: Respons
         paidAmount: true,
         createdById: true,
         createdBy: { select: { id: true, name: true, role: true } },
+        customer:   { select: { name: true } },
       },
       orderBy: { createdAt: 'asc' },
     }),
@@ -181,7 +182,8 @@ router.get('/staff', requireRole('ADMIN'), async (req: AuthRequest, res: Respons
   };
 
   // Build per-user aggregation
-  type DayData = { orders: number; orderValue: number; invoices: number; billed: number; collected: number };
+  type InvoiceRow = { id: string; customerName: string; totalAmount: number; paidAmount: number };
+  type DayData = { orders: number; orderValue: number; invoices: number; billed: number; collected: number; invoiceRows: InvoiceRow[] };
   type UserStat = {
     user: { id: string; name: string; role: string };
     totalOrders: number;
@@ -212,7 +214,7 @@ router.get('/staff', requireRole('ADMIN'), async (req: AuthRequest, res: Respons
 
   const getDay = (stat: UserStat, dateStr: string): DayData => {
     if (!stat.daily[dateStr]) {
-      stat.daily[dateStr] = { orders: 0, orderValue: 0, invoices: 0, billed: 0, collected: 0 };
+      stat.daily[dateStr] = { orders: 0, orderValue: 0, invoices: 0, billed: 0, collected: 0, invoiceRows: [] };
     }
     return stat.daily[dateStr];
   };
@@ -237,11 +239,17 @@ router.get('/staff', requireRole('ADMIN'), async (req: AuthRequest, res: Respons
     if (!stat) continue;
     const day = getDay(stat, toDateStr(inv.createdAt));
     stat.totalInvoices++;
-    stat.totalBilled   += inv.totalAmount;
+    stat.totalBilled    += inv.totalAmount;
     stat.totalCollected += inv.paidAmount;
     day.invoices++;
     day.billed    += inv.totalAmount;
     day.collected += inv.paidAmount;
+    day.invoiceRows.push({
+      id:          inv.id,
+      customerName: (inv as any).customer?.name ?? '—',
+      totalAmount: inv.totalAmount,
+      paidAmount:  inv.paidAmount,
+    });
   }
 
   // Ensure every active user appears — even those with zero sales

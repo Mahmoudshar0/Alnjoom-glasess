@@ -1,173 +1,192 @@
-# Today's Updates — 2026-06-16
+# Today's Updates — 2026-06-27
 
 > Session work performed on the **OptiVision** Optical Shop Management System.
 
 ---
 
-## 1. Payment History — Detailed Tracking View
+## 1. Bug Fix — ExaminationsPage `setValue` ReferenceError
 
 ### Problem
-Partial payments existed in the database (`Payment` table) but were displayed as a simple one-line entry (`date · method — amount`). No way to see payment dates, notes, or sequence at a glance.
+Creating a new examination threw `Uncaught ReferenceError: setValue is not defined`. Even after selecting a customer from the `SearchableSelect`, the form still showed a validation error "Customer is required" because the `setValue` function was never destructured from `useForm`.
 
 ### Changes Made
-
-#### `frontend/src/pages/invoices/InvoicesPage.tsx`
-- **Payment History table** — Replaced the simple list with a full `<table>` showing:
-  - `#` (sequential number), Date, Method (pill badge), Notes, Amount
-  - Green **Total Paid** footer row (`bg-emerald-50`)
-- **Add Payment modal** — Added a **Payment Date** field (date picker, defaults to today) so staff can record the exact date of a past payment
-- **`onPaySubmit`** — Now sends `date` field to the backend alongside `amount`, `method`, `notes`
-
-#### `frontend/src/pages/customers/CustomerProfile.tsx`
-- **Invoice History section** — Each invoice row is now **clickable/expandable**
-  - Shows payment count hint (`"2 payments"`) in the row
-  - Expand arrow (ChevronDown/Up) appears when payments exist
-  - Expanding reveals the same detailed payment table (Date, Method, Notes, Amount, Total Paid footer)
-- Added `expandedInvoice` state and `ChevronDown`, `ChevronUp` icon imports
-
-#### `frontend/src/api/invoices.ts`
-- Added `date?: string` to the `addPayment` function signature
-
-> **Backend note:** No backend changes needed — `POST /api/invoices/:id/payments` already accepted an optional `date` field and stored it correctly.
-
----
-
-## 2. Search Bar — Invoices Page
-
-### Problem
-No way to quickly find a specific customer's invoices without scrolling through a long list.
-
-### Changes Made
-
-#### `frontend/src/pages/invoices/InvoicesPage.tsx`
-- Added `searchQuery` state
-- Added `filteredInvoices` computed array — filters by **customer name** or **customer phone** (case-insensitive, client-side)
-- **Search bar UI** — Full-width input with Search icon on the left and a clear (×) button that appears when text is present
-- **Summary cards** (Total Billed, Collected, Outstanding) now reflect only the filtered invoices
-- **Empty state** — shows a Search icon + `"No results for '...'"` message when nothing matches
-- Compatible with the existing status tabs (ALL/UNPAID/PARTIAL/PAID) and date period filter
-
----
-
-## 3. Search Bar — Orders Page
-
-### Problem
-Same as invoices — no search to quickly locate a customer's orders.
-
-### Changes Made
-
-#### `frontend/src/pages/orders/OrdersPage.tsx`
-- Added `searchQuery` state and `filteredOrders` computed array
-- Filters by **customer name** or **customer phone** (client-side)
-- **Search bar UI** — identical pattern to the invoices search bar
-- Status tab count badges (`(3)`) still count from the full unfiltered list for reference
-- Empty state shows Search icon + "No results" message when needed
-- Added `X` icon import from lucide-react
-
----
-
-## 4. Searchable Select (Combobox) — Modal Customer Dropdowns
-
-### Problem
-The customer `<select>` dropdown in the New Examination, New Order, and New Invoice modals was a plain HTML select — unusable when there are many customers (no search/filter capability).
-
-### Changes Made
-
-#### `frontend/src/components/ui/SearchableSelect.tsx` *(NEW FILE)*
-Reusable combobox component:
-- Click trigger button → opens dropdown with an embedded **search input**
-- Type to filter options by `label` (name) or `sublabel` (phone)
-- Checkmark (✓) next to selected option
-- Small (×) button inside trigger to clear the selection
-- Closes on outside click or `Escape` key
-- Error state support (red border + message below)
-- Required marker (`*`) in label
 
 #### `frontend/src/pages/examinations/ExaminationsPage.tsx`
-- Replaced `<Select label="Customer *">` with `<SearchableSelect>`
-- Added `customerSelectValue` state (bridges the combobox to `react-hook-form` via `setValue`)
-- State properly cleared on modal open/close
-
-#### `frontend/src/pages/orders/OrdersPage.tsx`
-- Replaced `<Select label="Customer *">` with `<SearchableSelect>`
-- Added `customerSelectValue` state; selecting a customer also updates `selectedCustomer` (for examination lazy-load) and clears `examinationId`
-
-#### `frontend/src/pages/invoices/InvoicesPage.tsx`
-- Replaced `<Select label="Customer *">` with `<SearchableSelect>`
-- Wired directly to existing `selectedCustomerId` state (no react-hook-form involved here)
+- Added `setValue` to the `useForm` destructuring:
+  ```diff
+  - const { register, handleSubmit, reset, formState: { errors } } = useForm<ExamForm>({
+  + const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<ExamForm>({
+  ```
 
 ---
 
-## 5. Staff Performance Report *(NEW FEATURE)*
+## 2. Mock Data Seed — Full Database Population
 
 ### Problem
-No visibility into which employee created which orders/invoices, or how much each staff member billed and collected per day.
+Database was empty, making feature testing difficult.
+
+### Changes Made
+
+#### `backend/prisma/seed-mock.ts` *(NEW FILE)*
+Comprehensive seed covering all models:
+- **2 Users**: Admin (`admin@optivision.com` / `admin123`) + Employee (`staff@optivision.com` / `employee123`)
+- **12 Customers**: Arabic names with phones, emails, DOBs, addresses; 2 family pairs linked (parent→child)
+- **8 Examinations**: Full OD/OS prescriptions (SPH, CYL, Axis, ADD, IPD, Height), varying doctors
+- **15 Inventory items**: 6 Frames (Ray-Ban, Oakley, Gucci, Tom Ford, Silhouette, Generic), 5 Lenses (Essilor, Zeiss, Hoya), 4 Accessories
+- **12 Orders + 12 Invoices + Payments**: Mix of all statuses (NEW/IN_PROGRESS/READY/DELIVERED, UNPAID/PARTIAL/PAID), spread across past 90 days
+
+Run with: `npx ts-node prisma/seed-mock.ts`
+
+---
+
+## 3. Employee Seed — 3 New Staff Accounts
+
+### Changes Made
+
+#### `backend/prisma/seed-employees.ts` *(NEW FILE)*
+Adds 3 employee accounts using `upsert` (safe to re-run):
+
+| Name | Email | Password |
+|---|---|---|
+| سارة المنصوري | `sara.mansouri@optivision.com` | `sara@2024` |
+| عمر الحربي | `omar.harbi@optivision.com` | `omar@2024` |
+| لينا الشهري | `lina.shahri@optivision.com` | `lina@2024` |
+
+Run with: `npx ts-node prisma/seed-employees.ts`
+
+---
+
+## 4. Employee-Linked Data Seed — Customers, Orders, Invoices Per Staff
+
+### Problem
+New employees had no sales data, so the Staff Performance report was empty for them.
+
+### Changes Made
+
+#### `backend/prisma/seed-employee-data.ts` *(NEW FILE)*
+Seeds customers, orders, and invoices attributed to each new employee via `createdById`:
+
+| Employee | Customers | Orders | Invoice Mix |
+|---|---|---|---|
+| سارة المنصوري | وليد الرشيدي, أسماء الفيفي, بدر العنزي | 3 | PAID / PARTIAL / UNPAID |
+| عمر الحربي | حمد الخالدي, دانة السلمي, فيصل الدوسري | 3 | PAID / PARTIAL / UNPAID |
+| لينا الشهري | مريم الشمري, سلطان الغامدي | 2 | PAID / PARTIAL |
+
+Each order includes frame + 2 lenses + accessory from existing inventory.
+
+Run with: `npx ts-node prisma/seed-employee-data.ts`
+
+---
+
+## 5. Staff Performance Report — Zero-Sales Employees Now Always Visible
+
+### Problem
+Employees with no orders or invoices were invisible in the Staff Performance report — only those who had created ≥1 record appeared.
 
 ### Changes Made
 
 #### `backend/src/routes/reports.ts`
-- Added `GET /api/reports/staff` endpoint (Admin only via `requireRole('ADMIN')`)
-- Query parameters: `dateFrom`, `dateTo` (ISO strings, optional)
-- Aggregates:
-  - All `Order` records with `createdById` in the date range
-  - All `Invoice` records with `createdById` in the date range
-- Returns per-staff totals **and** a chronological daily breakdown array
-- Response shape:
-  ```json
-  {
-    "staffStats": [
-      {
-        "user": { "id": "...", "name": "...", "role": "ADMIN|EMPLOYEE" },
-        "totalOrders": 12,
-        "totalOrderValue": 3400.000,
-        "totalInvoices": 9,
-        "totalBilled": 3200.000,
-        "totalCollected": 2900.000,
-        "daily": [
-          {
-            "date": "2026-06-15",
-            "orders": 3,
-            "orderValue": 800.000,
-            "invoices": 2,
-            "billed": 750.000,
-            "collected": 700.000
-          }
-        ]
-      }
-    ],
-    "totalUsers": 4
+After aggregating orders and invoices into `statsMap`, the code now merges **all active users** so every employee appears even with zero stats:
+```typescript
+// Ensure every active user appears — even those with zero sales
+for (const u of allUsers) {
+  if (!statsMap[u.id]) {
+    statsMap[u.id] = {
+      user: u,
+      totalOrders: 0, totalOrderValue: 0,
+      totalInvoices: 0, totalBilled: 0, totalCollected: 0,
+      daily: {},
+    };
   }
-  ```
-- Sorted by `totalBilled` descending (highest earner first)
+}
+```
+Zero-sales employees sort to the bottom of the ranked list.
+
+#### `backend/dist/routes/reports.js`
+Same change applied to the compiled file so the running backend picks it up immediately without a full rebuild.
+
+---
+
+## 6. Invoices Page — Employee Summary Cards Show Today's Personal Sales
+
+### Problem
+The 3 summary cards at the top of `/invoices` (Total Billed, Total Collected, Outstanding) showed totals across **all invoices in the system**, regardless of who was logged in. Employees should only see their own today's numbers.
+
+### Changes Made
+
+#### `frontend/src/pages/invoices/InvoicesPage.tsx`
+- Added `user` to `useAuth()` destructuring (was only `isAdmin`)
+- Computed `todayMyInvoices`: invoices created today (`createdAt >= todayStart`) AND created by the current user (`createdBy.id === user.id`)
+- Summary cards are now **role-aware**:
+  - **Admin**: shows totals from `filteredInvoices` (all invoices, respects tab/date/search filters) — unchanged behavior
+  - **Employee**: shows totals from `todayMyInvoices` (today only, own invoices only)
+- Card titles change accordingly: `"Today's Billed"`, `"Today's Collected"`, `"Today's Outstanding"`
+- Each employee card shows a subtitle hint: `"Your sales today"`, `"Payments received today"`, `"N invoice(s) today"`
+
+---
+
+## 7. Staff Performance Report — Customer Names + Clickable Invoice Links
+
+### Problem
+The expandable daily breakdown in the Staff Performance report showed only aggregate numbers (billed, collected totals) with no way to see which customer each invoice was for or navigate to the invoice detail.
+
+### Changes Made
+
+#### `backend/src/routes/reports.ts`
+- Added `customer: { select: { name: true } }` to the invoice select query
+- Added `InvoiceRow` type: `{ id, customerName, totalAmount, paidAmount }`
+- Added `invoiceRows: InvoiceRow[]` to each day bucket (initialized as `[]`)
+- Each invoice now pushes into its day's `invoiceRows` array with customer name
+
+#### `backend/dist/routes/reports.js`
+Same changes applied to compiled JS for immediate effect.
 
 #### `frontend/src/api/reports.ts`
-- Added `StaffDayData`, `StaffMemberStat`, `StaffReport` TypeScript interfaces
-- Added `getStaffReport(params?)` API function
+- Added `StaffInvoiceRow` interface: `{ id, customerName, totalAmount, paidAmount }`
+- Added `invoiceRows: StaffInvoiceRow[]` field to `StaffDayData`
 
-#### `frontend/src/pages/reports/StaffPerformance.tsx` *(NEW FILE)*
-Full staff performance analytics page:
-- **Date range filter** — From / To date pickers + Apply / Clear buttons (same UX as invoices page)
-- **Summary bar** — 4 cards: Total Orders, Total Invoices, Total Billed, Total Collected (across all staff for the period)
-- **Staff cards** — One card per staff member, sorted by revenue:
-  - 🥇🥈🥉 Trophy / Award / Medal rank icons for top 3
-  - Role badge (Admin = violet, Employee = sky)
-  - **Collection rate progress bar** — green ≥90%, amber ≥60%, red below
-  - KPI columns: Orders, Invoices, Billed, Collected
-- **Expandable daily breakdown table** — click any card to expand:
-  - Columns: Date, Orders (count badge), Order Value, Invoices (count badge), Billed, Collected, Collection %
-  - Color-coded % per day (green/amber/red)
-  - Dark (`bg-slate-900`) totals footer row
-- Empty state with icon when no activity found
+#### `frontend/src/pages/reports/StaffPerformance.tsx`
+- Added `Link` import from `react-router-dom` and `ExternalLink` from lucide-react
+- **Completely rewrote the daily breakdown UI**: instead of one flat table per staff member, each day now renders its own mini-section:
+  - **Day header**: date + order count + collection % (color-coded)
+  - **Invoice rows table**: Customer name | Billed | Collected | Balance (red if > 0) | `🔗` Link button
+  - **`ExternalLink` button** on each row navigates to `/invoices`
+  - **Day Total dark footer row**: aggregated billed / collected / collection %
+- **Grand Total bar** at the bottom of each expanded staff card
 
-#### `frontend/src/App.tsx`
-- Added `import StaffPerformance`
-- Added route `/reports/staff` wrapped in `<AdminRoute>`
+---
 
-#### `frontend/src/pages/reports/ReportsPage.tsx`
-- Added two **nav cards** between the key stats and the detail sections:
-  - **Financial Reports** → `/reports/financial` (sky theme)
-  - **Staff Performance** → `/reports/staff` (violet theme)
-- Hover animations with arrow slide effect
+## 8. Staff Performance — Invoice Detail Modal on Row Click *(2026-06-29)*
+
+### Problem
+Clicking an invoice row in the Staff Performance expanded daily breakdown only showed a small external-link icon that navigated away to `/invoices`. There was no way to see the full details of an invoice without leaving the page.
+
+### Changes Made
+
+#### `frontend/src/pages/reports/StaffPerformance.tsx`
+- Added a new **`InvoiceDetailModal`** component rendered inline within `StaffPerformance`.
+- State variable `selectedInvoiceId` (string | null) tracks which invoice is open.
+- When any invoice row (`<tr>`) is clicked, `onInvoiceClick(inv.id)` is called → sets `selectedInvoiceId` → modal opens.
+- The entire `<tr>` is now clickable (not just the icon), with `cursor-pointer` and `hover:bg-sky-50`.
+- Removed the old `<Link to="/invoices">` navigation from the ExternalLink cell — replaced with the modal trigger.
+- `StaffCard` receives a new `onInvoiceClick` prop and passes it down to each invoice row.
+
+**Modal contents:**
+
+| Section | Details |
+|---------|---------|
+| **Header** | Short invoice ID · Print button (opens `/invoices/:id/print` in new tab) · Close (×) |
+| **Meta cards** | Customer name & phone · Invoice date · Status badge (Paid / Partial / Unpaid) + payment method |
+| **Orders** | Each linked order with status badge + item table (name, SKU, qty, unit price, line total, notes) |
+| **Payment History** | Numbered table: date · method badge · amount per installment |
+| **Financial Summary** | Total Billed / Total Collected / Outstanding Balance + animated progress bar |
+| **Notes** | Amber box displayed only if notes exist |
+
+**Behaviour:**
+- Fetches full invoice via `getInvoice(id)` (React Query — cached after first open).
+- Shows a spinner while loading.
+- `Escape` key closes the modal; clicking the backdrop closes it.
+- Print button opens `/invoices/:id/print` in a new tab without closing the modal.
 
 ---
 
@@ -175,14 +194,12 @@ Full staff performance analytics page:
 
 | File | Change Type | Description |
 |------|-------------|-------------|
-| `frontend/src/pages/invoices/InvoicesPage.tsx` | Modified | Payment table, date field, search bar, searchable customer select |
-| `frontend/src/pages/customers/CustomerProfile.tsx` | Modified | Expandable payment breakdown in invoice history |
-| `frontend/src/pages/orders/OrdersPage.tsx` | Modified | Search bar, searchable customer select |
-| `frontend/src/pages/examinations/ExaminationsPage.tsx` | Modified | Searchable customer select in modal |
-| `frontend/src/api/invoices.ts` | Modified | `date?` field in `addPayment` |
-| `frontend/src/api/reports.ts` | Modified | `getStaffReport`, staff types added |
-| `frontend/src/App.tsx` | Modified | `/reports/staff` route added |
-| `frontend/src/pages/reports/ReportsPage.tsx` | Modified | Financial & Staff nav cards added |
-| `frontend/src/components/ui/SearchableSelect.tsx` | **NEW** | Reusable searchable combobox component |
-| `frontend/src/pages/reports/StaffPerformance.tsx` | **NEW** | Staff performance analytics page |
-| `backend/src/routes/reports.ts` | Modified | `GET /api/reports/staff` endpoint added |
+| `frontend/src/pages/examinations/ExaminationsPage.tsx` | Fixed | Added `setValue` to `useForm` destructuring |
+| `frontend/src/pages/invoices/InvoicesPage.tsx` | Modified | Employee today-only summary cards; `user` added to `useAuth` |
+| `frontend/src/pages/reports/StaffPerformance.tsx` | Modified | Invoice Detail Modal on row click; per-invoice customer name rows + modal trigger |
+| `frontend/src/api/reports.ts` | Modified | `StaffInvoiceRow` type + `invoiceRows` in `StaffDayData` |
+| `backend/src/routes/reports.ts` | Modified | Zero-sales employee visibility fix; `invoiceRows` with customer name per day |
+| `backend/dist/routes/reports.js` | Modified | Compiled JS patched to match TS source (immediate effect) |
+| `backend/prisma/seed-mock.ts` | **NEW** | Full mock data seed (customers, exams, inventory, orders, invoices) |
+| `backend/prisma/seed-employees.ts` | **NEW** | 3 employee accounts (sara, omar, lina) |
+| `backend/prisma/seed-employee-data.ts` | **NEW** | Employee-linked customers, orders, invoices for staff report testing |
