@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, FlaskConical, ShoppingBag, FileText,
   Package, BarChart3, PieChart, Settings, UserCog, Database,
-  ChevronLeft, ChevronRight, Eye
+  ChevronLeft, ChevronRight, Eye, TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -18,9 +18,10 @@ const navItems = [
 ];
 
 const adminItems = [
-  { to: '/employees', icon: UserCog, label: 'Employees' },
+  { to: '/employees',       icon: UserCog,    label: 'Employees' },
   { to: '/reports/financial', icon: BarChart3, label: 'Financial' },
-  { to: '/backup', icon: Database, label: 'Backup' },
+  { to: '/reports/sales',   icon: TrendingUp, label: 'Sales Stats' },
+  { to: '/backup',          icon: Database,   label: 'Backup' },
 ];
 
 const bottomItems = [

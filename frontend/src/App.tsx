@@ -15,6 +15,7 @@ import EmployeesPage from './pages/employees/EmployeesPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import FinancialReports from './pages/reports/FinancialReports';
 import StaffPerformance from './pages/reports/StaffPerformance';
+import SalesStats from './pages/reports/SalesStats';
 import CustomerReport from './pages/reports/CustomerReport';
 import SettingsPage from './pages/settings/SettingsPage';
 import BackupPage from './pages/backup/BackupPage';
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="employees" element={<AdminRoute><EmployeesPage /></AdminRoute>} />
             <Route path="reports/financial" element={<AdminRoute><FinancialReports /></AdminRoute>} />
             <Route path="reports/staff" element={<AdminRoute><StaffPerformance /></AdminRoute>} />
+            <Route path="reports/sales" element={<AdminRoute><SalesStats /></AdminRoute>} />
             <Route path="backup" element={<AdminRoute><BackupPage /></AdminRoute>} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

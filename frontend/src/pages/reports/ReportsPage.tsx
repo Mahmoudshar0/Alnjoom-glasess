@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   Users, ShoppingBag, FlaskConical, Package, AlertTriangle,
-  TrendingUp, ArrowRight, CheckCircle, UserCheck, BarChart2
+  TrendingUp, ArrowRight, CheckCircle, UserCheck, BarChart2, PieChart
 } from 'lucide-react';
 import { getReportsSummary } from '../../api/reports';
 import { PageLoader } from '../../components/ui/LoadingSpinner';
@@ -84,7 +84,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Quick links to advanced reports */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Link
           to="/reports/financial"
           className="flex items-center gap-4 bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:border-sky-300 hover:shadow-md transition-all group"
@@ -111,6 +111,20 @@ export default function ReportsPage() {
             <p className="text-xs text-slate-500 mt-0.5">Daily sales, orders & collections per employee</p>
           </div>
           <ArrowRight size={16} className="text-slate-400 group-hover:text-violet-600 group-hover:translate-x-1 transition-all" />
+        </Link>
+
+        <Link
+          to="/reports/sales"
+          className="flex items-center gap-4 bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:border-emerald-300 hover:shadow-md transition-all group"
+        >
+          <div className="p-3 bg-emerald-50 rounded-xl group-hover:bg-emerald-100 transition-colors">
+            <TrendingUp size={22} className="text-emerald-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-slate-900">Sales Statistics</p>
+            <p className="text-xs text-slate-500 mt-0.5">Item sales, brands, categories, trends & employee stats</p>
+          </div>
+          <ArrowRight size={16} className="text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
         </Link>
       </div>
 

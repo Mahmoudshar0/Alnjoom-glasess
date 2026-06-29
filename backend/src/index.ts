@@ -10,6 +10,7 @@ import orderRoutes from './routes/orders';
 import invoiceRoutes from './routes/invoices';
 import employeeRoutes from './routes/employees';
 import reportRoutes from './routes/reports';
+import salesStatsRoutes from './routes/sales-stats';
 import backupRoutes, { initAutoBackup } from './routes/backup';
 
 const app = express();
@@ -26,6 +27,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/sales-stats', salesStatsRoutes);
 app.use('/api/backup', backupRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', version: '1.0.5' }));
