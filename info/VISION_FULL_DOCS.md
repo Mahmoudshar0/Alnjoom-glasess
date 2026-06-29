@@ -886,6 +886,158 @@ Clicking any invoice row in the daily breakdown table opens a full-detail modal 
 
 ---
 
+## Feature: Sales Statistics Dashboard *(Added 2026-06-29)*
+
+### Purpose
+An executive-level BI dashboard focused entirely on **item-level sales analytics**. Enables the shop owner to answer questions like: What are the best-selling products? Which brands generate the most revenue? Which products are stagnant? Which items need reordering? How does each employee perform in terms of items sold?
+
+### Route
+`/reports/sales` — Admin only (`AdminRoute` guard)
+
+### Navigation
+- **Sidebar**: "Sales Stats" link under the Admin section (TrendingUp icon)
+- **Reports hub** (`/reports`): Quick-link card (emerald theme, 3-column grid)
+- **AppLayout**: page title = "Sales Statistics"
+
+---
+
+### Backend — `GET /api/sales-stats`
+
+**File**: `backend/src/routes/sales-stats.ts`  
+**Auth**: Admin only (`requireRole('ADMIN')`)  
+**Registered in**: `backend/src/index.ts` → `app.use('/api/sales-stats', salesStatsRoutes)`
+
+#### Query Parameters
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `dateFrom` | ISO string | Filter start date/time |
+| `dateTo` | ISO string | Filter end date/time |
+| `employeeId` | string | Filter by employee who created the order |
+| `category` | `FRAME \| LENS \| ACCESSORY` | Filter by item type |
+| `brand` | string | Filter by brand (case-insensitive) |
+
+#### Data Source
+Queries `OrderItem` (joined to `InventoryItem` and `Order`) — the only table that has per-product sales quantities. No schema migration required.
+
+#### Response Sections
+
+| Field | Description |
+|-------|-------------|
+| `kpi` | totalItemsSold, totalSalesRevenue, avgOrderValue, totalOrders, avgItemsPerOrder, uniqueProductsSold |
+| `revenueByCategory` | Revenue + qty per category (FRAME / LENS / ACCESSORY) |
+| `revenueByBrand` | Revenue + qty + productCount per brand (top 15) |
+| `dailyTrend` | Per-day: revenue, qty, orders — drives the Area chart |
+| `monthlyTrend` | Per-month: revenue, qty, orders — drives the Bar chart |
+| `topProducts` | Top 20 products by revenue — rank, name, SKU, brand, type, qtySold, revenue, avgPrice, currentStock, lastSoldDate |
+| `slowMoving` | Items with < 3 sales + currentStock > 0 — sorted by daysSinceLastSale desc; includes revenueEstimate (stock × price) |
+| `lowStockBestSellers` | Products with currentStock ≤ 5 AND qtySold ≥ 3 — includes recommendedReorder (qtySold × 1.5) |
+| `employeeSales` | Per-employee: totalOrders, itemsSold, revenue, avgOrderValue |
+| `categorySummary` | productCount, qtySold, revenue, avgPrice per category |
+| `brandSummary` | revenue, unitsSold, productCount per brand (top 15) |
+
+#### Aggregation Strategy
+All aggregation is done **in JavaScript** after a single `prisma.orderItem.findMany()` with full includes. This avoids complex multi-level SQL GROUP BY and is fast enough for optical shop scale (< 10k orders).
+
+---
+
+### Frontend API Client
+
+**File**: `frontend/src/api/salesStats.ts`
+
+Exports:
+- `getSalesStats(params?: SalesStatsParams): Promise<SalesStatsResponse>` — thin Axios wrapper
+- All TypeScript interfaces: `SalesKpi`, `CategoryRevenue`, `BrandRevenue`, `DayTrend`, `MonthTrend`, `TopProduct`, `SlowMovingProduct`, `LowStockBestSeller`, `EmployeeSaleStat`, `CategorySummary`, `BrandSummary`, `SalesStatsResponse`
+
+---
+
+### Frontend Page
+
+**File**: `frontend/src/pages/reports/SalesStats.tsx`  
+**Library**: [Recharts](https://recharts.org) (`npm install recharts`) — added as a new frontend dependency
+
+#### Filter Bar
+- **Date presets**: Today / Yesterday / Last 7 Days / Last 30 Days / This Month / Last Month / This Year / All Time
+- **Custom range**: date pickers for From / To
+- **Category filter**: dropdown (All / Frames / Lenses / Accessories)
+- **Refresh button**: manual refetch with spin animation while fetching
+- Active preset highlighted in sky-600; custom range shown when "Custom" selected
+
+#### KPI Cards (6)
+| Card | Value | Color |
+|------|-------|-------|
+| Total Revenue | Sum of `price × quantity` from OrderItems | Emerald |
+| Items Sold | Total units sold | Sky |
+| Total Orders | Unique order count | Violet |
+| Avg Order Value | Revenue ÷ Orders | Amber |
+| Avg Items/Order | Units ÷ Orders | Slate |
+| Unique Products | Distinct inventory items with ≥ 1 sale | Sky |
+
+#### Charts (Recharts)
+
+| Chart | Component | Data | Notes |
+|-------|-----------|------|-------|
+| Revenue Over Time | `<AreaChart>` dual-axis | `dailyTrend` | Revenue (sky) + Items Sold (violet) with gradient fills; tooltip shows both |
+| Sales by Category | `<PieChart>` donut | `revenueByCategory` | Colors: Frame=sky, Lens=violet, Accessory=amber; legend shows % share |
+| Monthly Revenue | `<BarChart>` grouped | `monthlyTrend` | Revenue bar (sky) + Orders bar (slate); month labels formatted as "Jun 26" |
+| Revenue by Brand | `<BarChart>` horizontal | `revenueByBrand` (top 10) | Each bar gets a distinct colour from the BRAND_COLORS palette |
+
+Custom `<ChartTooltip>` component renders a white card tooltip with coloured dot per series.
+
+#### Tables (all sortable by clicking column headers)
+
+**Top Selling Products**  
+Columns: Rank · Product (name + SKU) · Type badge · Brand · Qty Sold · Revenue · Avg Price · In Stock (colour-coded) · Last Sold  
+— Sorted by revenue by default; clickable headers toggle asc/desc
+
+**Slow Moving Products**  
+Trigger: `qtySold < 3 AND currentStock > 0`  
+Columns: Product · Type · Last Sold · Days Without Sale (red if >60d, amber if >30d) · In Stock · Total Sold · Stock Value (price × qty)  
+— If no slow movers: shows a green "All products selling well" message
+
+**Low Stock Best Sellers** *(only shown if data exists)*  
+Trigger: `currentStock ≤ 5 AND qtySold ≥ 3`  
+Columns: Product · In Stock · Units Sold · Recommended Reorder  
+— Red border panel to draw attention
+
+**Employee Sales by Items**  
+Columns: Rank · Employee (avatar + name + revenue progress bar) · Orders · Items Sold · Revenue · Avg Order Value
+
+**Category Summary**  
+Columns: Category (badge + mini progress bar) · Products · Units · Revenue · Avg Price  
+— 3 fixed rows (Frame / Lens / Accessory)
+
+**Brand Summary**  
+Columns: Rank (coloured circle) · Brand · Products · Units · Revenue  
+— Top 15 by revenue; sortable
+
+#### Helper Components (internal)
+- `KpiCard` — coloured icon + label + value + subtitle
+- `SectionHeader` — section title + subtitle
+- `EmptyState` — centred placeholder text
+- `ChartTooltip` — custom Recharts tooltip
+- `useSortable<T>()` — generic sort hook returning `sorted`, `Th` (sortable header), `sortKey`, `sortDir`
+- `TypeBadge` — coloured pill for FRAME / LENS / ACCESSORY
+- `StockBadge` — green (>5) / amber (1–5) / red (0) stock indicator
+
+---
+
+### Files Changed Summary
+
+| File | Type | Change |
+|------|------|--------|
+| `backend/src/routes/sales-stats.ts` | **NEW** | Full analytics aggregation endpoint |
+| `backend/src/index.ts` | Modified | Registered `/api/sales-stats` route |
+| `frontend/src/api/salesStats.ts` | **NEW** | API client + TypeScript interfaces |
+| `frontend/src/pages/reports/SalesStats.tsx` | **NEW** | Full BI dashboard page (~650 lines) |
+| `frontend/src/App.tsx` | Modified | `/reports/sales` AdminRoute |
+| `frontend/src/components/layout/Sidebar.tsx` | Modified | "Sales Stats" nav item (TrendingUp icon) |
+| `frontend/src/components/layout/AppLayout.tsx` | Modified | Page title for `/reports/sales` and `/reports/staff` |
+| `frontend/src/pages/reports/ReportsPage.tsx` | Modified | Sales Stats quick-link card; 3-column grid |
+| `frontend/package.json` | Modified | `recharts` dependency added |
+
+---
+
 ## Feature: Employee Management (Admin Only)
 
 ### Purpose
