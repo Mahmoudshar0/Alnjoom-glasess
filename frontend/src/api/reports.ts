@@ -7,6 +7,13 @@ export const getFinancialReport = () =>
 export const getReportsSummary = () =>
   client.get<any>('/reports/summary').then(r => r.data);
 
+export interface StaffInvoiceRow {
+  id: string;
+  customerName: string;
+  totalAmount: number;
+  paidAmount: number;
+}
+
 export interface StaffDayData {
   date: string;
   orders: number;
@@ -14,6 +21,7 @@ export interface StaffDayData {
   invoices: number;
   billed: number;
   collected: number;
+  invoiceRows: StaffInvoiceRow[];
 }
 
 export interface StaffMemberStat {
