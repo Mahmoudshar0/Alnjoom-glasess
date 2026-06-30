@@ -118,7 +118,8 @@ router.post('/create', (_req: AuthRequest, res: Response) => {
 
   execFile(
     resolvePgBin('pg_dump'),
-    ['-h', db.host, '-p', db.port, '-U', db.user, '-F', 'p', '-f', filepath, db.dbName],
+    ['-h', db.host, '-p', db.port, '-U', db.user, '-F', 'p',
+     '--clean', '--if-exists', '-f', filepath, db.dbName],
     { env },
     (err) => {
       if (err) {
@@ -184,6 +185,129 @@ router.get('/download/:filename', (req: AuthRequest, res: Response) => {
   return res.download(filepath, filename);
 });
 
+// ─── Restore helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Step 1 — Create a safety backup of the CURRENT database before any restore.
+ * If this fails the restore is aborted — nothing has been touched yet.
+ */
+function createSafetyBackup(
+  db: NonNullable<ReturnType<typeof parseDbUrl>>,
+  env: NodeJS.ProcessEnv,
+  cb: (err: Error | null, safetyFile: string) => void
+) {
+  ensureBackupDir();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `pre-restore-safety-${timestamp}.sql`;
+  const filepath = path.join(BACKUP_DIR, filename);
+
+  execFile(
+    resolvePgBin('pg_dump'),
+    ['-h', db.host, '-p', db.port, '-U', db.user, '-F', 'p',
+     '--clean', '--if-exists', '-f', filepath, db.dbName],
+    { env },
+    (err) => cb(err, filepath)
+  );
+}
+
+/**
+ * Step 2 — Drop and recreate the public schema so the incoming SQL file can
+ * run its CREATE TABLE statements on a clean slate. Without this, psql silently
+ * skips conflicting CREATE TABLE calls and exits 0, giving a false "success".
+ */
+function cleanSchema(
+  db: NonNullable<ReturnType<typeof parseDbUrl>>,
+  env: NodeJS.ProcessEnv,
+  cb: (err: Error | null, stderr: string) => void
+) {
+  const sql = [
+    `DROP SCHEMA public CASCADE;`,
+    `CREATE SCHEMA public;`,
+    `GRANT ALL ON SCHEMA public TO "${db.user}";`,
+    `GRANT ALL ON SCHEMA public TO public;`,
+  ].join(' ');
+
+  execFile(
+    resolvePgBin('psql'),
+    ['-h', db.host, '-p', db.port, '-U', db.user, '-d', db.dbName, '-c', sql],
+    { env },
+    (err, _stdout, stderr) => cb(err, stderr)
+  );
+}
+
+/**
+ * Step 3 — Run psql with the SQL file.
+ * ON_ERROR_STOP=1 makes psql return a non-zero exit code on the first SQL error.
+ * --single-transaction wraps the whole restore in one transaction so a failure
+ * rolls back everything instead of leaving the database half-restored.
+ */
+function runPsqlRestore(
+  db: NonNullable<ReturnType<typeof parseDbUrl>>,
+  env: NodeJS.ProcessEnv,
+  sqlFile: string,
+  cb: (err: Error | null, stderr: string) => void
+) {
+  execFile(
+    resolvePgBin('psql'),
+    ['-h', db.host, '-p', db.port, '-U', db.user, '-d', db.dbName,
+     '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-f', sqlFile],
+    { env },
+    (err, _stdout, stderr) => cb(err, stderr)
+  );
+}
+
+/**
+ * Full restore pipeline:
+ *   createSafetyBackup → cleanSchema → runPsqlRestore
+ *
+ * If createSafetyBackup fails  → abort, database untouched.
+ * If cleanSchema fails         → abort, database untouched.
+ * If runPsqlRestore fails      → single-transaction rolls back; admin can
+ *                                restore from the safety backup created in step 1.
+ */
+function runRestorePipeline(
+  db: NonNullable<ReturnType<typeof parseDbUrl>>,
+  env: NodeJS.ProcessEnv,
+  sqlFile: string,
+  cleanup: (() => void) | null,
+  res: Response
+) {
+  createSafetyBackup(db, env, (backupErr) => {
+    if (backupErr) {
+      if (cleanup) cleanup();
+      return res.status(500).json({
+        message: 'Restore aborted: could not create a safety backup of the current database. No data was changed.',
+        error: backupErr.message,
+      });
+    }
+
+    cleanSchema(db, env, (cleanErr, cleanStderr) => {
+      if (cleanErr) {
+        if (cleanup) cleanup();
+        return res.status(500).json({
+          message: 'Restore aborted: could not clear the database schema. A safety backup was saved. No data was changed.',
+          error: cleanErr.message,
+          stderr: cleanStderr,
+        });
+      }
+
+      runPsqlRestore(db, env, sqlFile, (restoreErr, restoreStderr) => {
+        if (cleanup) cleanup();
+        if (restoreErr) {
+          return res.status(500).json({
+            message: 'Restore failed after clearing the schema. The database may be empty — use the pre-restore-safety backup to recover.',
+            error: restoreErr.message,
+            stderr: restoreStderr,
+          });
+        }
+        return res.json({ message: 'Database restored successfully' });
+      });
+    });
+  });
+}
+
+// ─── Restore routes ───────────────────────────────────────────────────────────
+
 // POST /api/backup/restore/:filename — restore from a saved backup
 router.post('/restore/:filename', (req: AuthRequest, res: Response) => {
   const filename = sanitizeFilename(req.params.filename);
@@ -198,25 +322,10 @@ router.post('/restore/:filename', (req: AuthRequest, res: Response) => {
   const db = parseDbUrl(process.env.DATABASE_URL || '');
   if (!db) return res.status(500).json({ message: 'Invalid DATABASE_URL' });
 
-  const env = { ...process.env, PGPASSWORD: db.password };
-  execFile(
-    resolvePgBin('psql'),
-    ['-h', db.host, '-p', db.port, '-U', db.user, '-d', db.dbName, '-f', filepath],
-    { env },
-    (err, _stdout, stderr) => {
-      if (err) {
-        return res.status(500).json({
-          message: 'Restore failed. Make sure psql is installed and in your PATH.',
-          error: err.message,
-          stderr,
-        });
-      }
-      return res.json({ message: 'Database restored successfully' });
-    }
-  );
+  runRestorePipeline(db, { ...process.env, PGPASSWORD: db.password }, filepath, null, res);
 });
 
-// POST /api/backup/restore-upload — advanced: restore from uploaded file
+// POST /api/backup/restore-upload — restore from uploaded .sql file
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => { ensureBackupDir(); cb(null, BACKUP_DIR); },
@@ -238,23 +347,10 @@ router.post('/restore-upload', upload.single('backup'), (req: AuthRequest, res: 
     return res.status(500).json({ message: 'Invalid DATABASE_URL' });
   }
 
-  const env = { ...process.env, PGPASSWORD: db.password };
-  execFile(
-    resolvePgBin('psql'),
-    ['-h', db.host, '-p', db.port, '-U', db.user, '-d', db.dbName, '-f', req.file.path],
-    { env },
-    (err, _stdout, stderr) => {
-      try { if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); } catch {}
-      if (err) {
-        return res.status(500).json({
-          message: 'Restore failed. Make sure psql is installed and in your PATH.',
-          error: err.message,
-          stderr,
-        });
-      }
-      return res.json({ message: 'Database restored successfully' });
-    }
-  );
+  const filePath = req.file.path;
+  const cleanup = () => { try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch {} };
+
+  runRestorePipeline(db, { ...process.env, PGPASSWORD: db.password }, filePath, cleanup, res);
 });
 
 // DELETE /api/backup/:filename
@@ -297,7 +393,8 @@ function runAutoBackup() {
 
   execFile(
     resolvePgBin('pg_dump'),
-    ['-h', db.host, '-p', db.port, '-U', db.user, '-F', 'p', '-f', filepath, db.dbName],
+    ['-h', db.host, '-p', db.port, '-U', db.user, '-F', 'p',
+     '--clean', '--if-exists', '-f', filepath, db.dbName],
     { env },
     (err) => {
       if (!err) {

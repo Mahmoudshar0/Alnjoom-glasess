@@ -53,6 +53,7 @@ const COPY: Record<
     amountPaid: string;
     balanceDue: string;
     paymentHistory: string;
+    noPayments: string;
     notes: string;
     footerShop: string;
     printed: string;
@@ -82,6 +83,7 @@ const COPY: Record<
     amountPaid: 'Amount Paid',
     balanceDue: 'Balance Due',
     paymentHistory: 'Payment History',
+    noPayments: 'No payments have been made yet.',
     notes: 'Notes',
     footerShop: 'Al Najoom — +965 50127250',
     printed: 'Printed:',
@@ -110,6 +112,7 @@ const COPY: Record<
     amountPaid: 'المدفوع',
     balanceDue: 'المستحق',
     paymentHistory: 'سجل المدفوعات',
+    noPayments: 'لم يتم سداد أي مبلغ حتى الآن.',
     notes: 'ملاحظات',
     footerShop: 'النجوم — ',
     printed: 'تاريخ الطباعة:',
@@ -411,11 +414,11 @@ export default function InvoicePrint() {
         </div>
 
         {/* Payment History */}
-        {invoice.payments && invoice.payments.length > 0 && (
-          <div className="mb-6 bg-slate-50 rounded-lg p-4">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">
-              {t.paymentHistory}
-            </p>
+        <div className="mb-6 bg-slate-50 rounded-lg p-4">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">
+            {t.paymentHistory}
+          </p>
+          {invoice.payments && invoice.payments.length > 0 ? (
             <div className="space-y-1.5">
               {invoice.payments.map((p) => (
                 <div
@@ -432,8 +435,12 @@ export default function InvoicePrint() {
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className={`text-sm text-slate-400 italic ${isRtl ? "text-right" : ""}`}>
+              {t.noPayments}
+            </p>
+          )}
+        </div>
 
         {invoice.notes && (
           <div className="mb-6 text-sm">

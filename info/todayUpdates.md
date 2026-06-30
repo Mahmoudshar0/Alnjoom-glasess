@@ -1,4 +1,4 @@
-# Today's Updates — 2026-06-27
+# Today's Updates — 2026-06-30
 
 > Session work performed on the **OptiVision** Optical Shop Management System.
 
@@ -203,3 +203,69 @@ Clicking an invoice row in the Staff Performance expanded daily breakdown only s
 | `backend/prisma/seed-mock.ts` | **NEW** | Full mock data seed (customers, exams, inventory, orders, invoices) |
 | `backend/prisma/seed-employees.ts` | **NEW** | 3 employee accounts (sara, omar, lina) |
 | `backend/prisma/seed-employee-data.ts` | **NEW** | Employee-linked customers, orders, invoices for staff report testing |
+
+---
+
+## 9. Backup Restore — Production-Safe Pipeline *(2026-06-30)*
+
+### Problem
+The restore endpoint called `psql` directly on the live database without any safety net. `psql` returns exit code 0 even when SQL statements fail (e.g., `CREATE TABLE` conflicting with existing Prisma-managed tables), so the API responded "Database restored successfully" while nothing was actually restored.
+
+Additionally, there was no pre-restore backup, meaning a failed or corrupted restore could wipe production data with no recovery path.
+
+### Root Causes
+1. `psql` silently ignores SQL errors and returns exit code 0 by default — false success
+2. No pre-restore safety backup — destructive with no fallback
+3. `pg_dump` was missing `--clean --if-exists` flags — backups didn't include `DROP TABLE IF EXISTS`, so `CREATE TABLE` always conflicted on an existing database
+
+### Changes Made
+
+#### `backend/src/routes/backup.ts`
+Replaced the direct psql call with a **3-step restore pipeline**:
+
+**Step 1 — `createSafetyBackup()`**
+Before touching anything, runs `pg_dump --clean --if-exists` to save a `pre-restore-safety-<timestamp>.sql` file.
+If this fails → restore is aborted, production data untouched.
+
+**Step 2 — `cleanSchema()`**
+Runs: `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ...`
+Wipes all existing tables so the SQL file can run `CREATE TABLE` on a clean slate.
+If this fails → restore is aborted, production data untouched (safety backup already exists).
+
+**Step 3 — `runPsqlRestore()`**
+Runs psql with `-v ON_ERROR_STOP=1 --single-transaction`:
+- `ON_ERROR_STOP=1` → psql exits with non-zero code on first SQL error (real errors now surface)
+- `--single-transaction` → entire restore wrapped in one transaction; failure rolls back, no partial restore
+
+If step 3 fails → DB is empty but the `pre-restore-safety-*.sql` backup from step 1 is available for recovery.
+
+All three steps extracted into named helper functions (`createSafetyBackup`, `cleanSchema`, `runPsqlRestore`) and composed in `runRestorePipeline()`, shared by both `/restore/:filename` and `/restore-upload`.
+
+**Also fixed `pg_dump` flags** — added `--clean --if-exists` to all three pg_dump calls (manual backup, auto-backup) so future backups embed `DROP TABLE IF EXISTS` before each `CREATE TABLE`, making them self-contained.
+
+---
+
+## 10. Invoice Print — Empty Payment History Message *(2026-06-30)*
+
+### Problem
+The Payment History section on the printed invoice (`/invoices/:id/print`) was hidden entirely when an invoice had no payments. Printed invoices for unpaid customers showed no indication of payment status in that section, which was confusing.
+
+### Changes Made
+
+#### `frontend/src/pages/invoices/InvoicePrint.tsx`
+- Removed the `invoice.payments.length > 0` guard that hid the entire Payment History section
+- The section now **always renders**
+- When there are no payments, shows an italic placeholder message:
+  - **English:** *"No payments have been made yet."*
+  - **Arabic:** *"لم يتم سداد أي مبلغ حتى الآن."* (right-aligned in RTL)
+- Added `noPayments` key to the `COPY` record (both `en` and `ar`) and to the TypeScript type definition
+
+---
+
+## Summary of Files Changed *(2026-06-30)*
+
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `backend/src/routes/backup.ts` | Modified | 3-step safe restore pipeline; `--clean --if-exists` on all pg_dump calls; `ON_ERROR_STOP=1 --single-transaction` on psql restore |
+| `frontend/src/pages/invoices/InvoicePrint.tsx` | Modified | Payment History always shown; "no payments" message in EN + AR |
+| `info/VISION_FULL_DOCS.md` | Modified | Documented backup restore pipeline + invoice print payment history changes |

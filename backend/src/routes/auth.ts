@@ -11,8 +11,10 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
-
+// 01032479290
 router.post('/login', async (req: Request, res: Response) => {
+  // const test = await bcrypt.hash("admin123", 10);
+  // console.log(test)
   const parse = loginSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ message: 'Invalid input' });
 

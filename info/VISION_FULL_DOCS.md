@@ -649,6 +649,15 @@ Invoices List (filter by status, date range, customer)
 - Invoice print uses customer data + order items + payment summary
 - Period collective report aggregates multiple invoices for Excel export
 
+### Invoice Print — Payment History Section (`InvoicePrint.tsx`)
+The Payment History section is **always rendered** on the printed invoice regardless of payment status:
+- **With payments**: lists each installment as `date · method — amount` (same as before)
+- **No payments (UNPAID invoice)**: shows a placeholder message instead of an empty/missing section
+  - English: *"No payments have been made yet."*
+  - Arabic: *"لم يتم سداد أي مبلغ حتى الآن."* (right-aligned in RTL mode)
+- Both languages are defined in the `COPY` record under the `noPayments` key
+- The section header ("Payment History" / "سجل المدفوعات") always appears so the printed document is unambiguous about payment status
+
 ---
 
 ## Feature: Inventory Management
@@ -1105,20 +1114,43 @@ Disaster recovery, data portability, compliance.
 Backup Page
     │
     ├─► Create Backup: POST /api/backup/create
-    │       → pg_dump -h host -p port -U user -F p -f file dbname
+    │       → pg_dump -h host -p port -U user -F p --clean --if-exists -f file dbname
     │       → Returns metadata, prunes old backups per settings
     ├─► List: GET /api/backup/list → Filesystem scan (backups/*.sql)
     ├─► Download: GET /api/backup/download/:filename → res.download()
     ├─► Download Latest: GET /api/backup/download/latest
     ├─► Restore (saved): POST /api/backup/restore/:filename
-    │       → psql -h host -p port -U user -d dbname -f file
+    │       → 3-step pipeline (see Restore Pipeline below)
     ├─► Restore (upload): POST /api/backup/restore-upload (multer)
-    │       → Upload .sql → psql restore → Delete temp file
+    │       → Upload .sql → 3-step pipeline → Delete temp file
     ├─► Delete: DELETE /api/backup/:filename
     └─► Settings: GET/PUT /api/backup/settings
             → autoEnabled, frequency (daily/weekly/monthly), keepLast
             → Background scheduler (setInterval) runs pg_dump automatically
 ```
+
+### Restore Pipeline *(3-step, safe for production)*
+```
+[Restore triggered]
+        │
+        ▼
+Step 1: pg_dump → pre-restore-safety-<timestamp>.sql   ← full backup of CURRENT data
+        │ fails? → abort, nothing touched, return 500
+        ▼
+Step 2: psql → DROP SCHEMA public CASCADE + CREATE SCHEMA public   ← clean slate
+        │ fails? → abort, nothing touched, return 500
+        ▼
+Step 3: psql -v ON_ERROR_STOP=1 --single-transaction -f <sql_file>
+        │ fails? → transaction rolls back (empty DB); admin recovers from safety backup
+        ▼
+     200 — Database restored successfully
+```
+
+| Step | Failure outcome |
+|------|----------------|
+| Safety backup fails | Abort — production data untouched |
+| Schema clean fails | Abort — production data untouched |
+| psql restore fails | Rolls back — DB empty, but `pre-restore-safety-*.sql` available |
 
 ### Files Involved
 | Type | Files |
@@ -1130,6 +1162,11 @@ Backup Page
 
 ### Key Implementation Details
 - **Cross-platform pg_dump/psql resolution**: Windows searches `C:\Program Files\PostgreSQL\<version>\bin\`
+- **Backup flags**: `--clean --if-exists` added to all `pg_dump` calls — backup SQL includes `DROP TABLE IF EXISTS` before each `CREATE TABLE`, making backups self-contained
+- **Restore pipeline**: `createSafetyBackup` → `cleanSchema` → `runPsqlRestore` (all three helpers in `backup.ts`)
+- **Error detection**: `ON_ERROR_STOP=1` ensures psql returns a non-zero exit code on the first SQL error (previously, psql returned 0 even when statements failed, giving a false "success")
+- **Atomic restore**: `--single-transaction` wraps the entire restore; on failure the transaction rolls back instead of leaving the DB half-restored
+- **Safety backups**: Named `pre-restore-safety-<timestamp>.sql`, visible in the backup list, usable for recovery if a restore fails mid-way
 - **Auto-backup scheduler**: `initAutoBackup()` called on startup and settings change
 - **Pruning**: Keeps last N backups per settings
 - **Settings persisted**: `backups/settings.json`
@@ -1141,7 +1178,8 @@ Backup Page
 
 ### Edge Cases
 - pg_dump/psql not in PATH: Windows fallback search
-- Restore replaces ALL data (warning shown)
+- Restore replaces ALL data — safety backup created first automatically
+- If restore psql step fails, DB schema is empty; admin must restore from the auto-created safety backup
 - Auto-backup runs only while Node process alive
 
 ---
