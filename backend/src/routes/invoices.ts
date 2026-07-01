@@ -43,10 +43,24 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       ...(status ? { status: status as any } : {}),
       ...(customerId ? { customerId } : {}),
       ...(dateFrom || dateTo ? {
-        createdAt: {
-          ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
-          ...(dateTo ? { lte: new Date(dateTo) } : {}),
-        },
+        OR: [
+          {
+            createdAt: {
+              ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+              ...(dateTo ? { lte: new Date(dateTo) } : {}),
+            },
+          },
+          {
+            payments: {
+              some: {
+                date: {
+                  ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+                  ...(dateTo ? { lte: new Date(dateTo) } : {}),
+                },
+              },
+            },
+          },
+        ],
       } : {}),
     },
     orderBy: { createdAt: 'desc' },

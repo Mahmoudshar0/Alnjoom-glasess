@@ -197,11 +197,11 @@ export default function SalesStats() {
   const activePreset = presets.find(p => p.label === preset);
   const params: SalesStatsParams = {};
   if (preset === 'Custom') {
-    if (customFrom) params.dateFrom = new Date(customFrom + 'T00:00:00').toISOString();
-    if (customTo)   params.dateTo   = new Date(customTo   + 'T23:59:59').toISOString();
+    if (customFrom) params.dateFrom = `${customFrom}T00:00:00.000Z`;
+    if (customTo)   params.dateTo   = `${customTo}T23:59:59.999Z`;
   } else if (activePreset && activePreset.from) {
-    params.dateFrom = new Date(activePreset.from + 'T00:00:00').toISOString();
-    params.dateTo   = new Date(activePreset.to   + 'T23:59:59').toISOString();
+    params.dateFrom = `${activePreset.from}T00:00:00.000Z`;
+    params.dateTo   = `${activePreset.to}T23:59:59.999Z`;
   }
   if (filterEmployee) params.employeeId = filterEmployee;
   if (filterCategory) params.category   = filterCategory;

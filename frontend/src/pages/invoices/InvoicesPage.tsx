@@ -25,11 +25,10 @@ const tabs: { key: InvoiceStatus | 'ALL'; label: string }[] = [
 ];
 
 function toApiDateRange(from: string, to: string) {
-  const start = new Date(from);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(to);
-  end.setHours(23, 59, 59, 999);
-  return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
+  return {
+    dateFrom: `${from}T00:00:00.000Z`,
+    dateTo: `${to}T23:59:59.999Z`,
+  };
 }
 
 function orderTotal(order: Order): number {
@@ -231,10 +230,38 @@ export default function InvoicesPage() {
       })
     : [];
 
-  const summaryInvoices  = isAdmin ? filteredInvoices : todayMyInvoices;
-  const summaryBilled    = summaryInvoices.reduce((s, i) => s + i.totalAmount, 0);
-  const summaryCollected = summaryInvoices.reduce((s, i) => s + i.paidAmount, 0);
-  const summaryOutstanding = summaryInvoices.reduce((s, i) => s + (i.totalAmount - i.paidAmount), 0);
+  const summaryInvoices = isAdmin ? filteredInvoices : todayMyInvoices;
+
+  // Period boundary helpers (used for summary cards + payment row highlights)
+  const periodStart = appliedPeriod ? new Date(`${appliedPeriod.from}T00:00:00.000Z`) : null;
+  const periodEnd   = appliedPeriod ? new Date(`${appliedPeriod.to}T23:59:59.999Z`)   : null;
+  const isPaymentInRange = (dateStr: string) => {
+    if (!periodStart || !periodEnd) return false;
+    const d = new Date(dateStr);
+    return d >= periodStart && d <= periodEnd;
+  };
+
+  const isInvoiceCreatedInRange = (inv: Invoice) => {
+    if (!periodStart || !periodEnd) return false;
+    const d = new Date(inv.createdAt);
+    return d >= periodStart && d <= periodEnd;
+  };
+
+  // When admin views a period: billed = invoices created in range OR with payment in range; collected = only in-range payments
+  const periodCollected = (isAdmin && periodActive)
+    ? filteredInvoices.reduce((s, inv) =>
+        s + inv.payments.filter(p => isPaymentInRange(p.date)).reduce((ps, p) => ps + p.amount, 0), 0)
+    : 0;
+  const periodBilled = (isAdmin && periodActive)
+    ? filteredInvoices
+        .filter(inv => isInvoiceCreatedInRange(inv) || inv.payments.some(p => isPaymentInRange(p.date)))
+        .reduce((s, i) => s + i.totalAmount, 0)
+    : 0;
+  const periodOutstanding = periodBilled - periodCollected;
+
+  const summaryBilled      = (isAdmin && periodActive) ? periodBilled      : summaryInvoices.reduce((s, i) => s + i.totalAmount, 0);
+  const summaryCollected   = (isAdmin && periodActive) ? periodCollected   : summaryInvoices.reduce((s, i) => s + i.paidAmount, 0);
+  const summaryOutstanding = (isAdmin && periodActive) ? periodOutstanding : summaryInvoices.reduce((s, i) => s + (i.totalAmount - i.paidAmount), 0);
 
   return (
     <div className="space-y-4">
@@ -242,24 +269,30 @@ export default function InvoicesPage() {
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">
-            {isAdmin ? 'Total Billed' : "Today's Billed"}
+            {isAdmin ? (periodActive ? 'Period Billed' : 'Total Billed') : "Today's Billed"}
           </p>
           <p className="text-xl font-bold text-slate-900 mt-1">{formatKWD(summaryBilled)}</p>
-          {!isAdmin && <p className="text-xs text-slate-400 mt-0.5">Your sales today</p>}
+          {isAdmin && periodActive
+            ? <p className="text-xs text-slate-400 mt-0.5">Invoices created or paid in period</p>
+            : !isAdmin && <p className="text-xs text-slate-400 mt-0.5">Your sales today</p>}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">
-            {isAdmin ? 'Total Collected' : "Today's Collected"}
+            {isAdmin ? (periodActive ? 'Period Collected' : 'Total Collected') : "Today's Collected"}
           </p>
           <p className="text-xl font-bold text-emerald-600 mt-1">{formatKWD(summaryCollected)}</p>
-          {!isAdmin && <p className="text-xs text-slate-400 mt-0.5">Payments received today</p>}
+          {isAdmin && periodActive
+            ? <p className="text-xs text-slate-400 mt-0.5">Payments made within this period only</p>
+            : !isAdmin && <p className="text-xs text-slate-400 mt-0.5">Payments received today</p>}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-xs text-slate-500 uppercase tracking-wide">
-            {isAdmin ? 'Outstanding' : "Today's Outstanding"}
+            {isAdmin ? (periodActive ? 'Period Outstanding' : 'Outstanding') : "Today's Outstanding"}
           </p>
           <p className="text-xl font-bold text-red-600 mt-1">{formatKWD(summaryOutstanding)}</p>
-          {!isAdmin && <p className="text-xs text-slate-400 mt-0.5">{todayMyInvoices.length} invoice{todayMyInvoices.length !== 1 ? 's' : ''} today</p>}
+          {isAdmin && periodActive
+            ? <p className="text-xs text-slate-400 mt-0.5">Billed minus collected in period</p>
+            : !isAdmin && <p className="text-xs text-slate-400 mt-0.5">{todayMyInvoices.length} invoice{todayMyInvoices.length !== 1 ? 's' : ''} today</p>}
         </div>
       </div>
 
@@ -422,45 +455,67 @@ export default function InvoicesPage() {
                   </div>
 
                   {/* Payment history */}
-                  {inv.payments && inv.payments.length > 0 && (
+                  {inv.payments && inv.payments.length > 0 && (() => {
+                    const displayPayments = periodActive
+                      ? inv.payments.filter(p => isPaymentInRange(p.date))
+                      : inv.payments;
+                    const hiddenCount = inv.payments.length - displayPayments.length;
+                    const periodTotal = displayPayments.reduce((s, p) => s + p.amount, 0);
+                    return (
                     <div>
-                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Payment History ({inv.payments.length})</p>
-                      <div className="rounded-lg border border-slate-200 overflow-hidden">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200">
-                              <th className="px-3 py-2 text-left font-semibold text-slate-500 w-8">#</th>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-500">Date</th>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-500">Method</th>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-500">Notes</th>
-                              <th className="px-3 py-2 text-right font-semibold text-slate-500">Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {inv.payments.map((p, idx) => (
-                              <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                                <td className="px-3 py-2 text-slate-400 font-medium">{idx + 1}</td>
-                                <td className="px-3 py-2 text-slate-700 font-medium">{formatDate(p.date)}</td>
-                                <td className="px-3 py-2">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-sky-50 text-sky-700 border border-sky-100">
-                                    {p.method}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 text-slate-400 italic">{p.notes || '—'}</td>
-                                <td className="px-3 py-2 text-right font-semibold text-emerald-600">{formatKWD(p.amount)}</td>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                        {periodActive ? `Payments in Period (${displayPayments.length})` : `Payment History (${inv.payments.length})`}
+                      </p>
+                      {displayPayments.length > 0 ? (
+                        <div className="rounded-lg border border-slate-200 overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-200">
+                                <th className="px-3 py-2 text-left font-semibold text-slate-500 w-8">#</th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-500">Date</th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-500">Method</th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-500">Notes</th>
+                                <th className="px-3 py-2 text-right font-semibold text-slate-500">Amount</th>
                               </tr>
-                            ))}
-                          </tbody>
-                          <tfoot>
-                            <tr className="bg-emerald-50 border-t-2 border-emerald-200">
-                              <td colSpan={4} className="px-3 py-2 text-xs font-semibold text-emerald-700">Total Paid</td>
-                              <td className="px-3 py-2 text-right text-sm font-bold text-emerald-700">{formatKWD(inv.paidAmount)}</td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {displayPayments.map((p, idx) => (
+                                <tr key={p.id} className={`transition-colors ${periodActive ? 'bg-sky-50 hover:bg-sky-100' : 'hover:bg-slate-50'}`}>
+                                  <td className="px-3 py-2 text-slate-400 font-medium">{idx + 1}</td>
+                                  <td className="px-3 py-2 text-slate-700 font-medium">{formatDate(p.date)}</td>
+                                  <td className="px-3 py-2">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${periodActive ? 'bg-sky-100 text-sky-800 border-sky-300' : 'bg-sky-50 text-sky-700 border-sky-100'}`}>
+                                      {p.method}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-400 italic">{p.notes || '—'}</td>
+                                  <td className={`px-3 py-2 text-right font-semibold ${periodActive ? 'text-sky-700' : 'text-emerald-600'}`}>{formatKWD(p.amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr className={`border-t-2 ${periodActive ? 'bg-sky-50 border-sky-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                                <td colSpan={4} className={`px-3 py-2 text-xs font-semibold ${periodActive ? 'text-sky-700' : 'text-emerald-700'}`}>
+                                  {periodActive ? 'Collected in Period' : 'Total Paid'}
+                                </td>
+                                <td className={`px-3 py-2 text-right text-sm font-bold ${periodActive ? 'text-sky-700' : 'text-emerald-700'}`}>
+                                  {formatKWD(periodActive ? periodTotal : inv.paidAmount)}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">No payments recorded in this period.</p>
+                      )}
+                      {hiddenCount > 0 && (
+                        <p className="text-xs text-slate-400 mt-1.5">
+                          + {hiddenCount} payment{hiddenCount !== 1 ? 's' : ''} outside this period (total paid: {formatKWD(inv.paidAmount)})
+                        </p>
+                      )}
                     </div>
-                  )}
+                    );
+                  })()}
 
                   <div className="flex gap-2 pt-2 border-t border-slate-100">
                     {inv.status !== 'PAID' && (

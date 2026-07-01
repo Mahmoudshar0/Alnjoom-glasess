@@ -587,11 +587,17 @@ All authenticated users (Admin can override amounts/status)
 Billing and collection management with per-installment audit trail.
 
 ### Role-Specific Summary Cards
-The 3 summary cards at the top of the Invoices page are **role-aware**:
-| Role | Card Data Source | Labels |
-|------|-----------------|--------|
-| **Admin** | All filtered invoices (respects tab/date/search) | Total Billed / Total Collected / Outstanding |
-| **Employee** | Only today's invoices created by the logged-in user | Today's Billed / Today's Collected / Today's Outstanding |
+The 3 summary cards at the top of the Invoices page are **role-aware** and **period-aware**:
+| Role | Period Active? | Card Data Source | Labels |
+|------|---------------|-----------------|--------|
+| **Admin** | No | All filtered invoices | Total Billed / Total Collected / Outstanding |
+| **Admin** | Yes | In-range payments only | Period Billed / Period Collected / Period Outstanding |
+| **Employee** | — | Today's invoices by logged-in user | Today's Billed / Today's Collected / Today's Outstanding |
+
+When a period is active for admin:
+- **Period Billed** = `totalAmount` sum of invoices that have ≥1 payment within the range
+- **Period Collected** = sum of `payment.amount` where `payment.date` is within the range
+- **Period Outstanding** = Period Billed − Period Collected
 
 ### Internal Flow
 ```
@@ -622,7 +628,7 @@ Invoices List (filter by status, date range, customer)
 ### APIs Used
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/invoices` | Filter status, customer, date range |
+| GET | `/api/invoices` | Filter status, customer, date range (by **payment date**, not invoice creation date) |
 | GET | `/api/invoices/:id` | Full detail with orders, payments |
 | POST | `/api/invoices` | Create from orderIds (transaction) |
 | POST | `/api/invoices/:id/payments` | Add payment (amount, **date**, method, notes), recalc paidAmount + status |
@@ -637,17 +643,29 @@ Invoices List (filter by status, date range, customer)
 - Admin can override total/paid/status directly (audit risk)
 - Deleting invoice unlinks orders (they become available for re-invoicing)
 
+### Period Filter Behavior (Date Range)
+When a date range is applied via the period filter, the backend uses **payment date** (not invoice `createdAt`) to match invoices:
+- An invoice is included if it has **any Payment record** whose `date` falls within `[dateFrom, dateTo]`
+- Invoices with `status = UNPAID` are **always included** regardless of the date range (they have no payments yet)
+- Invoices that are PAID/PARTIAL but have **no Payment records** (admin-override paid) are correctly excluded
+
+**Date encoding (UTC-safe):** Frontend sends `dateFrom=YYYY-MM-DDT00:00:00.000Z` and `dateTo=YYYY-MM-DDT23:59:59.999Z` using string concatenation — not `new Date().setHours()` — to avoid local-timezone shift on the Kuwait (UTC+3) server.
+
+**Period payment display:** When a period is active, the invoice expand panel and `PeriodCollectiveReport` only show payments whose `date` is within the range. Out-of-range payments are hidden with a footnote: `"+ N payment(s) outside this period · total ever paid: KWD X.XXX"`
+
 ### Security Rules
 - JWT required for all
 - Admin only: PUT /api/invoices/:id (amount/status override)
 
 ### Edge Cases & UI Notes
 - Partial payments shown as a numbered table inside invoice expand panel: #, Date, Method (badge), Notes, Amount, Total Paid footer
+- When period filter is active, payment table header changes to "Payments in Period (N)" and footer shows "Collected in Period" with the in-range sum only
 - CustomerProfile Invoice History also has expandable payment breakdown per invoice
 - Payment date can be set explicitly in Add Payment modal (defaults to today)
 - Search bar on Invoices page filters by customer name or phone (client-side, instant)
 - Invoice print uses customer data + order items + payment summary
-- Period collective report aggregates multiple invoices for Excel export
+- Period collective report (`PeriodCollectiveReport.tsx`) aggregates multiple invoices with period-specific totals and per-invoice payment breakdown (in-range only) + Excel export
+- In-range payments are highlighted with a sky-blue background (`bg-sky-50`) in the payment list
 
 ### Invoice Print — Payment History Section (`InvoicePrint.tsx`)
 The Payment History section is **always rendered** on the printed invoice regardless of payment status:

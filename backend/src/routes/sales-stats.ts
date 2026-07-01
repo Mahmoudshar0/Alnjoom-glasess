@@ -15,17 +15,27 @@ router.get('/', requireRole('ADMIN'), async (req: AuthRequest, res: Response) =>
   const category   = req.query.category   as string | undefined;
   const brand      = req.query.brand      as string | undefined;
 
-  const orderDateFilter: Record<string, any> = {};
-  if (dateFrom) orderDateFilter.gte = new Date(dateFrom);
-  if (dateTo)   orderDateFilter.lte = new Date(dateTo);
+  const dateRangeFilter: Record<string, Date> = {};
+  if (dateFrom) dateRangeFilter.gte = new Date(dateFrom);
+  if (dateTo)   dateRangeFilter.lte = new Date(dateTo);
+  const hasPeriod = Object.keys(dateRangeFilter).length > 0;
 
   // ── Fetch all OrderItems in scope ─────────────────────────────────────────
+  // An order is in scope if its invoice was created in the range OR has a
+  // payment in the range (mirrors the invoices page filter).
   const rawItems = await prisma.orderItem.findMany({
     where: {
       inventoryItemId: { not: null },
       order: {
-        ...(Object.keys(orderDateFilter).length ? { createdAt: orderDateFilter } : {}),
         ...(employeeId ? { createdById: employeeId } : {}),
+        ...(hasPeriod ? {
+          invoice: {
+            OR: [
+              { createdAt: dateRangeFilter },
+              { payments: { some: { date: dateRangeFilter } } },
+            ],
+          },
+        } : {}),
       },
       ...(category || brand
         ? {

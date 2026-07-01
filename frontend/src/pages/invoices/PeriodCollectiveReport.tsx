@@ -23,8 +23,22 @@ export default function PeriodCollectiveReport({
   dateTo,
   showToolbar = true,
 }: Props) {
-  const totalBilled = invoices.reduce((s, i) => s + i.totalAmount, 0);
-  const totalCollected = invoices.reduce((s, i) => s + i.paidAmount, 0);
+  const periodStart = new Date(dateFrom.includes('T') ? dateFrom : `${dateFrom}T00:00:00.000Z`);
+  const periodEnd   = new Date(dateTo.includes('T')   ? dateTo   : `${dateTo}T23:59:59.999Z`);
+  const isPaymentInRange = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d >= periodStart && d <= periodEnd;
+  };
+
+  // Billed = invoices created in period OR with a payment in period (excludes UNPAID from outside range)
+  // Collected = sum of only in-range payments across all invoices
+  const invoicesInPeriod = invoices.filter(inv => {
+    const d = new Date(inv.createdAt);
+    return (d >= periodStart && d <= periodEnd) || inv.payments.some(p => isPaymentInRange(p.date));
+  });
+  const totalBilled      = invoicesInPeriod.reduce((s, i) => s + i.totalAmount, 0);
+  const totalCollected   = invoices.reduce((s, inv) =>
+    s + inv.payments.filter(p => isPaymentInRange(p.date)).reduce((ps, p) => ps + p.amount, 0), 0);
   const totalOutstanding = totalBilled - totalCollected;
 
   return (
@@ -155,17 +169,37 @@ export default function PeriodCollectiveReport({
                   </div>
                 ))}
 
-                {inv.payments && inv.payments.length > 0 && (
-                  <div className="mt-3 bg-slate-50 rounded-lg px-3 py-2">
-                    <p className="text-xs font-semibold text-slate-500 mb-1">Payments</p>
-                    {inv.payments.map(p => (
-                      <div key={p.id} className="flex justify-between text-xs py-0.5">
-                        <span className="text-slate-600">{formatDate(p.date)} · {p.method}</span>
-                        <span className="font-medium text-emerald-600">{formatKWD(p.amount)}</span>
+                {inv.payments && inv.payments.length > 0 && (() => {
+                  const periodPayments = inv.payments.filter(p => isPaymentInRange(p.date));
+                  const hiddenCount = inv.payments.length - periodPayments.length;
+                  const periodTotal = periodPayments.reduce((s, p) => s + p.amount, 0);
+                  return (
+                  <div className="mt-3 rounded-lg overflow-hidden border border-sky-200">
+                    <p className="text-xs font-semibold text-sky-700 bg-sky-50 px-3 py-1.5 border-b border-sky-200">
+                      Payments in Period ({periodPayments.length})
+                    </p>
+                    {periodPayments.length > 0 ? periodPayments.map(p => (
+                      <div key={p.id} className="flex justify-between items-center text-xs px-3 py-1.5 border-b border-sky-100 last:border-0 bg-white">
+                        <span className="text-slate-700">{formatDate(p.date)} · {p.method}</span>
+                        <span className="font-medium text-sky-700">{formatKWD(p.amount)}</span>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="px-3 py-2 text-xs text-slate-400 italic">No payments in this period.</div>
+                    )}
+                    {periodPayments.length > 0 && (
+                      <div className="flex justify-between items-center text-xs px-3 py-1.5 bg-sky-50 font-semibold text-sky-800">
+                        <span>Collected in Period</span>
+                        <span>{formatKWD(periodTotal)}</span>
+                      </div>
+                    )}
+                    {hiddenCount > 0 && (
+                      <div className="px-3 py-1.5 text-xs text-slate-400 border-t border-slate-100">
+                        + {hiddenCount} payment{hiddenCount !== 1 ? 's' : ''} outside period · total ever paid: {formatKWD(inv.paidAmount)}
+                      </div>
+                    )}
                   </div>
-                )}
+                  );
+                })()}
 
                 {inv.notes && (
                   <p className="mt-2 text-xs text-slate-500 italic">Note: {inv.notes}</p>
@@ -176,7 +210,10 @@ export default function PeriodCollectiveReport({
         </div>
 
         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
-          <span className="text-sm font-medium">Period Grand Total</span>
+          <div>
+            <span className="text-sm font-medium">Period Grand Total</span>
+            <p className="text-xs text-slate-400 mt-0.5">Payments collected within period only</p>
+          </div>
           <div className="text-right">
             <p className="text-lg font-bold">{formatKWD(totalBilled)}</p>
             <p className="text-xs text-slate-300">
